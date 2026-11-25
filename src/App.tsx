@@ -73,7 +73,14 @@ export default function App() {
   );
 
   const availableYears = useMemo(() => {
-    const yrs = new Set<number>([2024, 2025, 2026, 2027, store.activeAno]);
+    const currentYear = new Date().getFullYear();
+    const yrs = new Set<number>([
+      currentYear - 2,
+      currentYear - 1,
+      currentYear,
+      currentYear + 1,
+      store.activeAno,
+    ]);
     for (const snap of Object.values(store.periods)) {
       yrs.add(snap.ano);
     }

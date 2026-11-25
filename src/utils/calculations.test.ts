@@ -19,9 +19,144 @@ import {
   parseBRDate,
   parseCurrencyMaskInput,
 } from './format';
-import { createInitialFinanceStore, DEFAULT_CATEGORIES } from '../data/defaults';
+import {
+  createInitialFinanceStore,
+  DEFAULT_BANKS,
+  DEFAULT_CATEGORIES,
+  DEFAULT_PAYMENT_METHODS,
+  DEFAULT_TITULARES,
+} from '../data/defaults';
 import { isValidThemeId } from './theme';
-import type { BankAccount, Transaction } from '../types/finance';
+import type { BankAccount, FinanceStore, Transaction } from '../types/finance';
+
+function createSampleTestStore(): FinanceStore {
+  const janBanks: BankAccount[] = [
+    {
+      id: 'bank_nubank_2026_1',
+      nome: 'Nubank',
+      saldoConta: 3000,
+      descontoComprometido: 200,
+      caixinhaCofrinho: 5000,
+      investimentos: 10000,
+      criptomoedas: 1000,
+      faturaCC: 500,
+      dividendosRecebidos: 100,
+    },
+    {
+      id: 'bank_mp_2026_1',
+      nome: 'Mercado Pago',
+      saldoConta: 1000,
+      descontoComprometido: 0,
+      caixinhaCofrinho: 2000,
+      investimentos: 3000,
+      criptomoedas: 0,
+      faturaCC: 200,
+      dividendosRecebidos: 25,
+    },
+  ];
+
+  const febBanks: BankAccount[] = [
+    { ...janBanks[0], id: 'bank_nubank_2026_2', investimentos: 12000 },
+    { ...janBanks[1], id: 'bank_mp_2026_2', investimentos: 3500 },
+  ];
+
+  return {
+    version: '3.10',
+    activeAno: 2026,
+    activeMes: 2,
+    periods: {
+      '2026-01': {
+        periodoKey: '2026-01',
+        ano: 2026,
+        mes: 1,
+        lancamentos: [
+          {
+            id: 'tx_jan_1',
+            data: '05/01/2026',
+            mes: 1,
+            ano: 2026,
+            tipo: 'RECEITA',
+            categoria: 'RECEITAS',
+            descricao: 'Salário',
+            valor: 7800,
+            obs: 'Salário mensal',
+            formaPagamento: 'PIXR',
+            titular: 'ezequiel',
+          },
+        ],
+        bancos: janBanks,
+        metas: {},
+      },
+      '2026-02': {
+        periodoKey: '2026-02',
+        ano: 2026,
+        mes: 2,
+        lancamentos: [
+          {
+            id: 'tx_feb_1',
+            data: '05/02/2026',
+            mes: 2,
+            ano: 2026,
+            tipo: 'RECEITA',
+            categoria: 'RECEITAS',
+            descricao: 'Salário',
+            valor: 7800,
+            obs: 'Salário mensal',
+            formaPagamento: 'PIXR',
+            titular: 'ezequiel',
+          },
+          {
+            id: 'tx_feb_2',
+            data: '06/02/2026',
+            mes: 2,
+            ano: 2026,
+            tipo: 'DESPESA',
+            categoria: 'CASA',
+            descricao: 'Aluguel',
+            valor: 1950,
+            obs: 'Aluguel',
+            formaPagamento: 'PIXD',
+            titular: 'ezequiel',
+          },
+        ],
+        bancos: febBanks,
+        metas: {},
+      },
+    },
+    categorias: DEFAULT_CATEGORIES.map((c) => ({
+      ...c,
+      subcategorias: [...c.subcategorias],
+    })),
+    titulares: [...DEFAULT_TITULARES],
+    formasPagamento: [...DEFAULT_PAYMENT_METHODS],
+  };
+}
+
+test('createInitialFinanceStore starts clean with zeroed transactions and bank balances while preserving structure', () => {
+  const store = createInitialFinanceStore();
+  const keys = Object.keys(store.periods);
+  assert.equal(keys.length, 1);
+
+  const initialPeriod = store.periods[keys[0]];
+  assert.equal(initialPeriod.lancamentos.length, 0);
+  assert.deepEqual(
+    initialPeriod.bancos.map((b) => b.nome),
+    DEFAULT_BANKS.map((b) => b.nome),
+  );
+  for (const bank of initialPeriod.bancos) {
+    assert.equal(bank.saldoConta, 0);
+    assert.equal(bank.descontoComprometido, 0);
+    assert.equal(bank.caixinhaCofrinho, 0);
+    assert.equal(bank.investimentos, 0);
+    assert.equal(bank.criptomoedas, 0);
+    assert.equal(bank.faturaCC, 0);
+    assert.equal(bank.dividendosRecebidos, 0);
+  }
+
+  assert.equal(store.categorias.length, DEFAULT_CATEGORIES.length);
+  assert.deepEqual(store.titulares, DEFAULT_TITULARES);
+  assert.deepEqual(store.formasPagamento, DEFAULT_PAYMENT_METHODS);
+});
 
 test('format & date helpers parse Brazilian dates and currency masks accurately', () => {
   assert.equal(parseCurrencyMaskInput('R$ 1.234,56'), 1234.56);
@@ -153,9 +288,9 @@ test('computeBankMetrics, computeConsolidatedBanks, and computeBankHistory track
   assert.equal(consolidated.totalDividendos, 125);
   assert.equal(consolidated.patrimonioLiquidoTotal, 18000);
 
-  const store = createInitialFinanceStore();
+  const store = createSampleTestStore();
   const history = computeBankHistory(store.periods);
-  assert.equal(history.length, 5);
+  assert.equal(history.length, 2);
   assert.equal(history[0].periodoKey, '2026-01');
   assert.equal(history[1].periodoKey, '2026-02');
   assert.ok(history[1].patrimonioInvestido > history[0].patrimonioInvestido);
@@ -163,20 +298,20 @@ test('computeBankMetrics, computeConsolidatedBanks, and computeBankHistory track
 });
 
 test('computeAnnualPivot aggregates JAN-DEZ across periods and calculates category totals', () => {
-  const store = createInitialFinanceStore();
+  const store = createSampleTestStore();
   const pivot = computeAnnualPivot(store.periods, DEFAULT_CATEGORIES, 2026);
 
   assert.equal(pivot.ano, 2026);
-  assert.ok(pivot.totalReceitasAno > 0);
-  assert.ok(pivot.totalDespesasAno > 0);
+  assert.equal(pivot.totalReceitasAno, 15600);
+  assert.equal(pivot.totalDespesasAno, 1950);
   assert.equal(pivot.saldoAno, pivot.totalReceitasAno - pivot.totalDespesasAno);
 
-  assert.ok(pivot.totalReceitasMonths[1] > 0);
-  assert.ok(pivot.totalDespesasMonths[1] > 0);
+  assert.equal(pivot.totalReceitasMonths[1], 7800);
+  assert.equal(pivot.totalDespesasMonths[1], 1950);
 });
 
 test('standardized schemaVersion 1.0 export and multi-file import prevents duplicates by id and YYYY-MM', () => {
-  const store = createInitialFinanceStore();
+  const store = createSampleTestStore();
   const janPayload = buildPeriodExportPayload(store.periods['2026-01'], store.categorias);
   const febPayload = buildPeriodExportPayload(store.periods['2026-02'], store.categorias);
 
@@ -273,7 +408,7 @@ test('standardized schemaVersion 1.0 export and multi-file import prevents dupli
 });
 
 test('clearStoreTransactions removes transactions while keeping categories, people, and bank balances intact', () => {
-  const store = createInitialFinanceStore();
+  const store = createSampleTestStore();
   const initialFebBanks = store.periods['2026-02'].bancos;
   const initialJanCount = store.periods['2026-01'].lancamentos.length;
   assert.ok(initialJanCount > 0);
@@ -297,7 +432,7 @@ test('clearStoreTransactions removes transactions while keeping categories, peop
 });
 
 test('resetStoreForFreshStart zeroes all transactions and bank values while preserving template structure', () => {
-  const store = createInitialFinanceStore();
+  const store = createSampleTestStore();
   const initialBankNames = store.periods['2026-02'].bancos.map((b) => b.nome);
 
   const fresh = resetStoreForFreshStart(store);
@@ -325,4 +460,5 @@ test('resetStoreForFreshStart zeroes all transactions and bank values while pres
   assert.deepEqual(fresh.formasPagamento, store.formasPagamento);
   assert.equal(isValidThemeId('vibrant-gold-green-blue'), true);
 });
+
 
