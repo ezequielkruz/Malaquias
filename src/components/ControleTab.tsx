@@ -746,20 +746,20 @@ export const ControleTab: React.FC<ControleTabProps> = ({
       </div>
 
       {/* DESKTOP SPREADSHEET TABLE (>= 768px) */}
-      <div className="hidden md:block rounded-xl border-[1.5px] border-[var(--border-subtle)] bg-[var(--bg-surface)] [box-shadow:var(--card-shadow)] overflow-hidden">
-        <div className="overflow-x-auto">
+      <div className="hidden md:block rounded-xl border-[1.5px] border-[var(--border-subtle)] bg-[var(--bg-surface)] [box-shadow:var(--card-shadow)]">
+        <div className="overflow-auto max-h-[68vh] rounded-t-[10px]">
           <table className="w-full text-left border-collapse min-w-[1060px]">
             <thead>
-              <tr className="border-b border-[var(--border-subtle)] bg-[var(--bg-header)] text-xs font-semibold text-[var(--text-secondary)]">
-                <th className="py-3 px-3 w-32">Data</th>
-                <th className="py-3 px-3 w-28">Tipo</th>
-                <th className="py-3 px-3 w-40">Categoria</th>
-                <th className="py-3 px-3 w-44">Descrição</th>
-                <th className="py-3 px-3 w-36 text-right">Valor (R$)</th>
-                <th className="py-3 px-3">Obs</th>
-                <th className="py-3 px-3 w-32">Pago / Forma</th>
-                <th className="py-3 px-3 w-28">Titular</th>
-                <th className="py-3 px-3 w-24 text-right">Ações</th>
+              <tr className="text-xs font-semibold text-[var(--text-secondary)]">
+                <th className="py-3 px-3 w-32 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)]">Data</th>
+                <th className="py-3 px-3 w-28 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)]">Tipo</th>
+                <th className="py-3 px-3 w-40 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)]">Categoria</th>
+                <th className="py-3 px-3 w-44 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)]">Descrição</th>
+                <th className="py-3 px-3 w-36 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)] text-right">Valor (R$)</th>
+                <th className="py-3 px-3 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)]">Obs</th>
+                <th className="py-3 px-3 w-32 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)]">Pago / Forma</th>
+                <th className="py-3 px-3 w-28 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)]">Titular</th>
+                <th className="py-3 px-3 w-24 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)] text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--border-subtle)] text-sm">

@@ -1,11 +1,16 @@
 import React, { useRef } from 'react';
 import {
+  ArrowLeftRight,
+  CalendarRange,
   ChevronLeft,
   ChevronRight,
   Download,
+  Landmark,
   Palette,
+  PieChart,
   Plus,
   RotateCcw,
+  Tags,
   Upload,
 } from 'lucide-react';
 import type { TabId } from '../types/finance';
@@ -27,12 +32,17 @@ interface HeaderNavProps {
   onChangeTheme: (theme: ThemeId) => void;
 }
 
-const TABS: Array<{ id: TabId; label: string }> = [
-  { id: 'resumo', label: 'Resumo do Mês' },
-  { id: 'controle', label: 'Controle' },
-  { id: 'bancos', label: 'Bancos & Investimentos' },
-  { id: 'anual', label: 'Orçamento Anual' },
-  { id: 'categorias', label: 'Categorias' },
+const TABS: Array<{
+  id: TabId;
+  label: string;
+  mobileLabel: string;
+  Icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
+}> = [
+  { id: 'resumo', label: 'Resumo do Mês', mobileLabel: 'Resumo', Icon: PieChart },
+  { id: 'controle', label: 'Controle', mobileLabel: 'Controle', Icon: ArrowLeftRight },
+  { id: 'bancos', label: 'Bancos & Investimentos', mobileLabel: 'Bancos', Icon: Landmark },
+  { id: 'anual', label: 'Orçamento Anual', mobileLabel: 'Anual', Icon: CalendarRange },
+  { id: 'categorias', label: 'Categorias', mobileLabel: 'Categorias', Icon: Tags },
 ];
 
 export const HeaderNav: React.FC<HeaderNavProps> = ({
@@ -156,29 +166,48 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
           </div>
         </div>
 
-        {/* Mobile/Tablet Horizontal Scroll Tab Bar (no text clipped mid-word) */}
+        {/* Mobile/Tablet Touch-Friendly Icon + Label Grid Navigation (min 48px touch target, zero accidental cutoffs) */}
         <nav
           aria-label="Navegação móvel"
-          className="lg:hidden border-t border-[var(--border-subtle)] px-4 overflow-x-auto flex items-center gap-5"
+          className="lg:hidden border-t border-[var(--border-subtle)] bg-[var(--bg-canvas)]/55 px-2.5 sm:px-6 py-2"
         >
-          {TABS.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => onSelectTab(tab.id)}
-                aria-current={isActive ? 'page' : undefined}
-                className={`relative py-3 text-sm font-medium whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
-                  isActive
-                    ? 'text-[var(--text-primary)] font-semibold border-b-2 border-[var(--accent-underline)]'
-                    : 'text-[var(--text-muted)] hover:text-[var(--accent-blue)]'
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
+          <div className="grid grid-cols-5 gap-1.5 sm:gap-2.5">
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+              const TabIcon = tab.Icon;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => onSelectTab(tab.id)}
+                  aria-label={tab.label}
+                  aria-current={isActive ? 'page' : undefined}
+                  className={`relative min-h-[52px] sm:min-h-[46px] px-1 sm:px-2.5 py-1.5 rounded-lg border-[1.5px] flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 text-center transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-underline)] ${
+                    isActive
+                      ? 'border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] text-[var(--text-primary)] font-bold [box-shadow:var(--card-shadow)]'
+                      : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-secondary)] font-medium hover:bg-[var(--bg-surface-hover)]'
+                  }`}
+                >
+                  <TabIcon
+                    className={`w-4 h-4 shrink-0 ${
+                      isActive ? 'text-[var(--accent-gold)]' : 'text-[var(--accent-blue)]'
+                    }`}
+                    aria-hidden={true}
+                  />
+                  <span className="text-[10px] sm:text-xs leading-tight tracking-tight truncate max-w-full">
+                    <span className="sm:hidden">{tab.mobileLabel}</span>
+                    <span className="hidden sm:inline">{tab.label}</span>
+                  </span>
+                  {isActive && (
+                    <span
+                      aria-hidden="true"
+                      className="absolute bottom-0 left-2 right-2 h-[3px] rounded-t bg-[var(--accent-underline)]"
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
         </nav>
       </header>
 
