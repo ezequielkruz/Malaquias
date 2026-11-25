@@ -2,12 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { CheckCircle2, AlertCircle, X } from 'lucide-react';
 import type {
   BankAccount,
+  CreditCardConfig,
   FinanceStore,
   TabId,
   Transaction,
   TransactionType,
 } from './types/finance';
 import {
+  addTransactionsBatchToStore,
   buildPeriodExportPayload,
   clearStoreTransactions,
   getOrCreatePeriodSnapshot,
@@ -154,6 +156,18 @@ export default function App() {
           : 'Lançamento salvo no Controle.',
       });
     }
+  };
+
+  const handleSaveTransactionsBatch = (items: Array<Omit<Transaction, 'id'>>) => {
+    if (items.length === 0) return;
+    setStore((prev) => addTransactionsBatchToStore(prev, items));
+    const first = items[0];
+    const last = items[items.length - 1];
+    const cardSuffix = first.cartaoNome ? ` no cartão ${first.cartaoNome}` : '';
+    setNotice({
+      kind: 'success',
+      message: `${items.length} parcelas geradas${cardSuffix} (${formatPeriodLabel(first.ano, first.mes)} até ${formatPeriodLabel(last.ano, last.mes)}).`,
+    });
   };
 
   const handleDeleteTransaction = (id: string) => {
@@ -323,9 +337,68 @@ export default function App() {
     }));
   };
 
+  // Credit Cards CRUD
+  const handleAddCreditCard = (
+    nome: string,
+    diaVencimento: number,
+  ): CreditCardConfig | null => {
+    const cleanName = nome.trim();
+    const due = Math.min(Math.max(Math.round(diaVencimento), 1), 31);
+    if (!cleanName) return null;
+
+    const currentCards = store.cartoes || [];
+    if (
+      currentCards.some(
+        (c) => c.nome.toLowerCase() === cleanName.toLowerCase(),
+      )
+    ) {
+      return null;
+    }
+
+    const newCard: CreditCardConfig = {
+      id: generateId('cc'),
+      nome: cleanName,
+      diaVencimento: due,
+    };
+
+    setStore((prev) => ({
+      ...prev,
+      cartoes: [...(prev.cartoes || []), newCard],
+    }));
+    return newCard;
+  };
+
+  const handleUpdateCreditCard = (
+    id: string,
+    nome: string,
+    diaVencimento: number,
+  ) => {
+    const cleanName = nome.trim();
+    const due = Math.min(Math.max(Math.round(diaVencimento), 1), 31);
+    if (!cleanName) return;
+
+    setStore((prev) => ({
+      ...prev,
+      cartoes: (prev.cartoes || []).map((c) =>
+        c.id === id ? { ...c, nome: cleanName, diaVencimento: due } : c,
+      ),
+    }));
+  };
+
+  const handleDeleteCreditCard = (id: string) => {
+    setStore((prev) => ({
+      ...prev,
+      cartoes: (prev.cartoes || []).filter((c) => c.id !== id),
+    }));
+  };
+
   // JSON Export & Multi-File Import
   const handleExportPeriodJson = () => {
-    const payload = buildPeriodExportPayload(activePeriod, store.categorias);
+    const payload = buildPeriodExportPayload(
+      activePeriod,
+      store.categorias,
+      store.cartoes || [],
+    );
     const filename = formatExportFilename(store.activeAno, store.activeMes);
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
@@ -361,7 +434,7 @@ export default function App() {
     setNotice({
       kind: 'success',
       message:
-        'Modo Amigo ativado: lançamentos apagados e saldos bancários zerados em R$ 0,00. Categorias, Titulares e Formas de Pagamento mantidos.',
+        'Modo Amigo ativado: lançamentos apagados e saldos bancários zerados em R$ 0,00. Categorias, Titulares, Formas de Pagamento e Cartões mantidos.',
     });
   };
 
@@ -503,6 +576,7 @@ export default function App() {
             categories={store.categorias}
             titulares={store.titulares}
             formasPagamento={store.formasPagamento}
+            cartoes={store.cartoes || []}
             onAddCategory={handleAddCategory}
             onDeleteCategory={handleDeleteCategory}
             onAddSubcategory={handleAddSubcategory}
@@ -511,6 +585,9 @@ export default function App() {
             onDeleteTitular={handleDeleteTitular}
             onAddFormaPagamento={handleAddFormaPagamento}
             onDeleteFormaPagamento={handleDeleteFormaPagamento}
+            onAddCreditCard={handleAddCreditCard}
+            onUpdateCreditCard={handleUpdateCreditCard}
+            onDeleteCreditCard={handleDeleteCreditCard}
             onOpenResetModal={() => setIsResetModalOpen(true)}
           />
         )}
@@ -530,8 +607,11 @@ export default function App() {
         categories={store.categorias}
         titulares={store.titulares}
         formasPagamento={store.formasPagamento}
+        cartoes={store.cartoes || []}
+        onAddCreditCard={handleAddCreditCard}
         onClose={() => setIsTxModalOpen(false)}
         onSave={handleSaveTransaction}
+        onSaveBatch={handleSaveTransactionsBatch}
       />
 
       <ResetDataModal

@@ -1,5 +1,5 @@
 import type { FinanceStore } from '../types/finance';
-import { createInitialFinanceStore } from '../data/defaults';
+import { createInitialFinanceStore, DEFAULT_CREDIT_CARDS } from '../data/defaults';
 
 const STORAGE_KEY = 'gestor_financeiro_3_10_store';
 
@@ -17,6 +17,12 @@ export function loadFinanceStore(): FinanceStore {
     const parsed = JSON.parse(raw) as FinanceStore;
     if (!parsed || typeof parsed !== 'object' || !parsed.periods) {
       return createInitialFinanceStore();
+    }
+    if (!Array.isArray(parsed.cartoes)) {
+      return {
+        ...parsed,
+        cartoes: DEFAULT_CREDIT_CARDS.map((c) => ({ ...c })),
+      };
     }
     return parsed;
   } catch {

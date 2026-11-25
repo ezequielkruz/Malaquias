@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
-import { CreditCard, Plus, RotateCcw, Trash2, Users } from 'lucide-react';
-import type { CategoryConfig, TransactionType } from '../types/finance';
+import { Check, CreditCard, Pencil, Plus, RotateCcw, Trash2, Users, X } from 'lucide-react';
+import type { CategoryConfig, CreditCardConfig, TransactionType } from '../types/finance';
 
 interface CategoriasTabProps {
   categories: CategoryConfig[];
   titulares: string[];
   formasPagamento: string[];
+  cartoes: CreditCardConfig[];
   onAddCategory: (nome: string, tipo: TransactionType) => void;
   onDeleteCategory: (id: string) => void;
   onAddSubcategory: (categoryId: string, subName: string) => void;
@@ -14,6 +15,9 @@ interface CategoriasTabProps {
   onDeleteTitular: (name: string) => void;
   onAddFormaPagamento: (name: string) => void;
   onDeleteFormaPagamento: (name: string) => void;
+  onAddCreditCard: (nome: string, diaVencimento: number) => CreditCardConfig | null;
+  onUpdateCreditCard: (id: string, nome: string, diaVencimento: number) => void;
+  onDeleteCreditCard: (id: string) => void;
   onOpenResetModal: () => void;
 }
 
@@ -21,6 +25,7 @@ export const CategoriasTab: React.FC<CategoriasTabProps> = ({
   categories,
   titulares,
   formasPagamento,
+  cartoes,
   onAddCategory,
   onDeleteCategory,
   onAddSubcategory,
@@ -29,6 +34,9 @@ export const CategoriasTab: React.FC<CategoriasTabProps> = ({
   onDeleteTitular,
   onAddFormaPagamento,
   onDeleteFormaPagamento,
+  onAddCreditCard,
+  onUpdateCreditCard,
+  onDeleteCreditCard,
   onOpenResetModal,
 }) => {
   const [newCatName, setNewCatName] = useState('');
@@ -36,6 +44,14 @@ export const CategoriasTab: React.FC<CategoriasTabProps> = ({
   const [subInputs, setSubInputs] = useState<Record<string, string>>({});
   const [newTitular, setNewTitular] = useState('');
   const [newForma, setNewForma] = useState('');
+
+  // Credit card form & editing state
+  const [newCardName, setNewCardName] = useState('');
+  const [newCardDueDay, setNewCardDueDay] = useState('10');
+  const [cardFormError, setCardFormError] = useState('');
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
+  const [editCardName, setEditCardName] = useState('');
+  const [editCardDueDay, setEditCardDueDay] = useState('10');
 
   const handleCreateCategory = (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,6 +83,47 @@ export const CategoriasTab: React.FC<CategoriasTabProps> = ({
     if (!val) return;
     onAddFormaPagamento(val);
     setNewForma('');
+  };
+
+  const handleCreateCard = (e: React.FormEvent) => {
+    e.preventDefault();
+    setCardFormError('');
+    const trimmed = newCardName.trim();
+    const due = parseInt(newCardDueDay, 10);
+    if (!trimmed) {
+      setCardFormError('Informe o nome do cartão.');
+      return;
+    }
+    if (!Number.isFinite(due) || due < 1 || due > 31) {
+      setCardFormError('Dia de vencimento deve estar entre 1 e 31.');
+      return;
+    }
+    const created = onAddCreditCard(trimmed, due);
+    if (!created) {
+      setCardFormError('Já existe um cartão cadastrado com esse nome.');
+      return;
+    }
+    setNewCardName('');
+    setNewCardDueDay('10');
+  };
+
+  const startEditCard = (card: CreditCardConfig) => {
+    setEditingCardId(card.id);
+    setEditCardName(card.nome);
+    setEditCardDueDay(String(card.diaVencimento));
+    setCardFormError('');
+  };
+
+  const saveEditCard = (id: string) => {
+    const trimmed = editCardName.trim();
+    const due = parseInt(editCardDueDay, 10);
+    if (!trimmed || !Number.isFinite(due) || due < 1 || due > 31) {
+      setCardFormError('Informe um nome válido e dia de vencimento entre 1 e 31.');
+      return;
+    }
+    onUpdateCreditCard(id, trimmed, due);
+    setEditingCardId(null);
+    setCardFormError('');
   };
 
   return (
@@ -237,6 +294,181 @@ export const CategoriasTab: React.FC<CategoriasTabProps> = ({
             ))}
           </div>
         </div>
+      </div>
+
+      {/* Cartões de Crédito (Vencimento e Parcelamento) */}
+      <div
+        data-testid="credit-cards-manager"
+        className="rounded-xl border-[1.5px] border-[var(--card-blue-border)] bg-[var(--bg-surface)] [box-shadow:var(--card-shadow)] p-5 space-y-4"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <CreditCard className="w-4 h-4 text-[var(--accent-blue)] shrink-0" aria-hidden="true" />
+            <div>
+              <h2 className="font-display text-base font-bold text-[var(--text-primary)]">
+                Cartões de Crédito (Fatura &amp; Parcelamento)
+              </h2>
+              <p className="text-xs text-[var(--text-muted)]">
+                Defina os cartões e o dia de vencimento da fatura (1 a 31) usados nos lançamentos em &quot;CC&quot;
+              </p>
+            </div>
+          </div>
+          <span className="font-mono-nums text-xs font-semibold px-2 py-0.5 rounded border border-[var(--accent-blue-border)] bg-[var(--accent-blue-bg)] text-[var(--accent-blue)] whitespace-nowrap shrink-0">
+            {cartoes.length} cadastrado(s)
+          </span>
+        </div>
+
+        {cardFormError && (
+          <p
+            role="alert"
+            className="text-xs px-3 py-2 rounded-lg border border-[var(--semantic-expense)]/40 bg-[var(--semantic-expense-bg)] text-[var(--semantic-expense)]"
+          >
+            {cardFormError}
+          </p>
+        )}
+
+        <form
+          onSubmit={handleCreateCard}
+          className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 items-end"
+        >
+          <div className="sm:col-span-6">
+            <label
+              htmlFor="new-card-name"
+              className="block text-xs font-medium text-[var(--text-secondary)] mb-1"
+            >
+              Nome do Cartão
+            </label>
+            <input
+              id="new-card-name"
+              type="text"
+              value={newCardName}
+              onChange={(e) => setNewCardName(e.target.value)}
+              placeholder="Ex: Inter, Itaú, C6 Bank"
+              className="w-full bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-lg px-3 py-1.5 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)] focus:outline-none focus:border-[var(--accent-underline)]"
+            />
+          </div>
+
+          <div className="sm:col-span-3">
+            <label
+              htmlFor="new-card-due"
+              className="block text-xs font-medium text-[var(--text-secondary)] mb-1"
+            >
+              Dia de Vencimento (1–31)
+            </label>
+            <input
+              id="new-card-due"
+              type="number"
+              min={1}
+              max={31}
+              value={newCardDueDay}
+              onChange={(e) => setNewCardDueDay(e.target.value)}
+              className="w-full font-mono-nums bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-lg px-3 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-underline)]"
+            />
+          </div>
+
+          <div className="sm:col-span-3">
+            <button
+              type="submit"
+              className="w-full inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-[var(--accent-primary-text)] text-xs sm:text-sm font-semibold transition-colors cursor-pointer"
+            >
+              <Plus className="w-4 h-4" aria-hidden="true" />
+              <span>Adicionar Cartão</span>
+            </button>
+          </div>
+        </form>
+
+        {cartoes.length === 0 ? (
+          <p className="text-xs text-[var(--text-muted)] py-3 text-center border border-dashed border-[var(--border-subtle)] rounded-lg">
+            Nenhum cartão cadastrado. Adicione um cartão acima para usar o parcelamento em CC.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {cartoes.map((card) => {
+              const isEditing = editingCardId === card.id;
+              if (isEditing) {
+                return (
+                  <div
+                    key={card.id}
+                    className="rounded-lg border-[1.5px] border-[var(--accent-underline)] bg-[var(--bg-surface-alt)] p-3 space-y-2.5"
+                  >
+                    <div className="grid grid-cols-3 gap-2">
+                      <input
+                        type="text"
+                        aria-label={`Editar nome do cartão ${card.nome}`}
+                        value={editCardName}
+                        onChange={(e) => setEditCardName(e.target.value)}
+                        className="col-span-2 bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-md px-2.5 py-1.5 text-xs sm:text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-underline)]"
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        max={31}
+                        aria-label={`Editar vencimento do cartão ${card.nome}`}
+                        value={editCardDueDay}
+                        onChange={(e) => setEditCardDueDay(e.target.value)}
+                        className="font-mono-nums bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-md px-2 py-1.5 text-xs sm:text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-underline)]"
+                      />
+                    </div>
+                    <div className="flex items-center justify-end gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => setEditingCardId(null)}
+                        aria-label="Cancelar edição do cartão"
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] cursor-pointer"
+                      >
+                        <X className="w-3.5 h-3.5" aria-hidden="true" />
+                        <span>Cancelar</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => saveEditCard(card.id)}
+                        aria-label={`Salvar alterações do cartão ${card.nome}`}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-[var(--accent-primary)] text-[var(--accent-primary-text)] text-xs font-semibold cursor-pointer"
+                      >
+                        <Check className="w-3.5 h-3.5" aria-hidden="true" />
+                        <span>Salvar</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              return (
+                <div
+                  key={card.id}
+                  className="rounded-lg border-[1.5px] border-[var(--border-subtle)] bg-[var(--bg-surface-alt)] px-3.5 py-3 flex items-center justify-between gap-2"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[var(--text-primary)] truncate">
+                      {card.nome}
+                    </p>
+                    <p className="font-mono-nums text-xs text-[var(--text-muted)]">
+                      Vencimento dia {String(card.diaVencimento).padStart(2, '0')}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => startEditCard(card)}
+                      aria-label={`Editar cartão ${card.nome}`}
+                      className="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] cursor-pointer"
+                    >
+                      <Pencil className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDeleteCreditCard(card.id)}
+                      aria-label={`Remover cartão ${card.nome}`}
+                      className="p-1.5 rounded text-[var(--text-muted)] hover:text-[var(--semantic-expense)] hover:bg-[var(--semantic-expense-bg)] cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Categories & Subcategories Grid */}

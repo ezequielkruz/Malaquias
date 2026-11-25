@@ -14,6 +14,17 @@ export interface Transaction {
   obs: string;
   formaPagamento: string;
   titular: string;
+  cartaoId?: string;
+  cartaoNome?: string;
+  parcelaAtual?: number;
+  totalParcelas?: number;
+  parcelamentoGrupoId?: string;
+}
+
+export interface CreditCardConfig {
+  id: string;
+  nome: string;
+  diaVencimento: number; // 1-31
 }
 
 export interface BankAccount {
@@ -58,6 +69,7 @@ export interface FinanceStore {
   categorias: CategoryConfig[];
   titulares: string[];
   formasPagamento: string[];
+  cartoes: CreditCardConfig[];
 }
 
 export interface PeriodExportPayload {
@@ -67,5 +79,6 @@ export interface PeriodExportPayload {
   transacoes: Transaction[];
   bancos: BankAccount[];
   categorias: CategoryConfig[];
+  cartoes?: CreditCardConfig[];
   metas?: PeriodGoals;
 }

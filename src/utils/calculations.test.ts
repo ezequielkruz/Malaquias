@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  addTransactionsBatchToStore,
+  buildInstallmentPlan,
   buildPeriodExportPayload,
+  clampDayToMonth,
   clearStoreTransactions,
   computeAnnualPivot,
   computeBankHistory,
@@ -9,8 +12,10 @@ import {
   computeConsolidatedBanks,
   computeDashboardSummary,
   filterTransactions,
+  getDefaultFirstInstallmentStart,
   parseAndMergeImportedPayloads,
   resetStoreForFreshStart,
+  splitAmountIntoInstallments,
 } from './calculations';
 import {
   formatBRL,
@@ -23,6 +28,7 @@ import {
   createInitialFinanceStore,
   DEFAULT_BANKS,
   DEFAULT_CATEGORIES,
+  DEFAULT_CREDIT_CARDS,
   DEFAULT_PAYMENT_METHODS,
   DEFAULT_TITULARES,
 } from '../data/defaults';
@@ -129,6 +135,7 @@ function createSampleTestStore(): FinanceStore {
     })),
     titulares: [...DEFAULT_TITULARES],
     formasPagamento: [...DEFAULT_PAYMENT_METHODS],
+    cartoes: DEFAULT_CREDIT_CARDS.map((c) => ({ ...c })),
   };
 }
 
@@ -156,6 +163,10 @@ test('createInitialFinanceStore starts clean with zeroed transactions and bank b
   assert.equal(store.categorias.length, DEFAULT_CATEGORIES.length);
   assert.deepEqual(store.titulares, DEFAULT_TITULARES);
   assert.deepEqual(store.formasPagamento, DEFAULT_PAYMENT_METHODS);
+  assert.deepEqual(
+    store.cartoes.map((c) => c.nome),
+    DEFAULT_CREDIT_CARDS.map((c) => c.nome),
+  );
 });
 
 test('format & date helpers parse Brazilian dates and currency masks accurately', () => {
@@ -458,7 +469,113 @@ test('resetStoreForFreshStart zeroes all transactions and bank values while pres
   assert.deepEqual(fresh.categorias, store.categorias);
   assert.deepEqual(fresh.titulares, store.titulares);
   assert.deepEqual(fresh.formasPagamento, store.formasPagamento);
+  assert.deepEqual(fresh.cartoes, store.cartoes);
   assert.equal(isValidThemeId('vibrant-gold-green-blue'), true);
 });
+
+test('splitAmountIntoInstallments divides totals cleanly in cents and supports per-installment mode', () => {
+  const splitTotal = splitAmountIntoInstallments(100, 3, 'TOTAL');
+  assert.deepEqual(splitTotal, [33.34, 33.33, 33.33]);
+  const sum = splitTotal.reduce((a, b) => a + b, 0);
+  assert.equal(Math.round(sum * 100), 10000);
+
+  const splitParcela = splitAmountIntoInstallments(150.5, 4, 'PARCELA');
+  assert.deepEqual(splitParcela, [150.5, 150.5, 150.5, 150.5]);
+});
+
+test('credit card installment planner aligns due day, handles February clamping and year rollover, and generates batch periods', () => {
+  assert.equal(clampDayToMonth(2026, 2, 31), 28);
+  assert.equal(clampDayToMonth(2024, 2, 31), 29);
+  assert.equal(clampDayToMonth(2026, 4, 31), 30);
+
+  // Purchase day after due day (20 > 10) defaults to next month
+  const startNext = getDefaultFirstInstallmentStart(2026, 11, 20, 10);
+  assert.deepEqual(startNext, { ano: 2026, mes: 12, isNextMonth: true });
+
+  // Purchase day <= due day (05 <= 15) defaults to same month
+  const startSame = getDefaultFirstInstallmentStart(2026, 11, 5, 15);
+  assert.deepEqual(startSame, { ano: 2026, mes: 11, isNextMonth: false });
+
+  const nubank = { id: 'cc_nubank', nome: 'Nubank', diaVencimento: 31 };
+
+  // 1x preserves single transaction behavior
+  const singlePlan = buildInstallmentPlan({
+    data: '18/11/2026',
+    tipo: 'DESPESA',
+    categoria: 'ALIMENTAÇÃO',
+    descricao: 'Restaurante',
+    valor: 120,
+    obs: 'Almoço',
+    formaPagamento: 'CC',
+    titular: 'ezequiel',
+    card: nubank,
+    parcelas: 1,
+    valorModo: 'TOTAL',
+  });
+  assert.equal(singlePlan.items.length, 1);
+  assert.equal(singlePlan.items[0].data, '18/11/2026');
+  assert.equal(singlePlan.items[0].mes, 11);
+  assert.equal(singlePlan.items[0].cartaoNome, 'Nubank');
+  assert.equal(singlePlan.items[0].parcelaAtual, undefined);
+
+  // 4x starting Dec/2026 across Jan, Feb (clamped to 28), Mar 2027
+  const multiPlan = buildInstallmentPlan({
+    data: '25/11/2026',
+    tipo: 'DESPESA',
+    categoria: 'CASA',
+    descricao: 'Eletrodomésticos',
+    valor: 1000,
+    obs: 'Cafeteira',
+    formaPagamento: 'CC',
+    titular: 'familia',
+    card: nubank,
+    parcelas: 4,
+    valorModo: 'TOTAL',
+    primeiraParcelaOffset: 1,
+  });
+  assert.equal(multiPlan.items.length, 4);
+  assert.equal(multiPlan.totalValor, 1000);
+  assert.deepEqual(
+    multiPlan.items.map((i) => ({
+      data: i.data,
+      mes: i.mes,
+      ano: i.ano,
+      valor: i.valor,
+      parcela: `${i.parcelaAtual}/${i.totalParcelas}`,
+    })),
+    [
+      { data: '31/12/2026', mes: 12, ano: 2026, valor: 250, parcela: '1/4' },
+      { data: '31/01/2027', mes: 1, ano: 2027, valor: 250, parcela: '2/4' },
+      { data: '28/02/2027', mes: 2, ano: 2027, valor: 250, parcela: '3/4' },
+      { data: '31/03/2027', mes: 3, ano: 2027, valor: 250, parcela: '4/4' },
+    ],
+  );
+  assert.ok(multiPlan.items[0].obs.includes('Nubank (1/4)'));
+  assert.ok(multiPlan.items[3].obs.includes('Nubank (4/4)'));
+
+  const baseStore = createInitialFinanceStore();
+  const updatedStore = addTransactionsBatchToStore(baseStore, multiPlan.items);
+  assert.equal(updatedStore.periods['2026-12'].lancamentos.length, 1);
+  assert.equal(updatedStore.periods['2027-01'].lancamentos.length, 1);
+  assert.equal(updatedStore.periods['2027-02'].lancamentos.length, 1);
+  assert.equal(updatedStore.periods['2027-03'].lancamentos.length, 1);
+
+  // Export & re-import includes cartoes without duplicating cards
+  const exportPayload = buildPeriodExportPayload(
+    updatedStore.periods['2026-12'],
+    updatedStore.categorias,
+    [...updatedStore.cartoes, { id: 'cc_inter', nome: 'Inter', diaVencimento: 20 }],
+  );
+  const imported = parseAndMergeImportedPayloads(updatedStore, [
+    { name: 'financas_2026_12.json', content: JSON.stringify(exportPayload) },
+  ]);
+  assert.equal(imported.errors.length, 0);
+  assert.ok(imported.nextStore.cartoes.some((c) => c.nome === 'Inter' && c.diaVencimento === 20));
+  assert.equal(
+    imported.nextStore.cartoes.filter((c) => c.nome.toLowerCase() === 'nubank').length,
+    1,
+  );
+});
+
 
 

@@ -1,13 +1,14 @@
 import type {
   BankAccount,
   CategoryConfig,
+  CreditCardConfig,
   FinanceStore,
   PeriodExportPayload,
   PeriodSnapshot,
   Transaction,
   TransactionType,
 } from '../types/finance';
-import { DEFAULT_BANKS } from '../data/defaults';
+import { DEFAULT_BANKS, DEFAULT_CREDIT_CARDS } from '../data/defaults';
 import { generateId, getPeriodKey, parseBRDate } from './format';
 
 export interface CategoryBreakdownItem {
@@ -198,7 +199,11 @@ export function filterTransactions(
       return false;
     }
     if (searchLower) {
-      const hay = `${tx.descricao} ${tx.obs} ${tx.categoria} ${tx.titular} ${tx.data}`.toLowerCase();
+      const parcelaInfo =
+        tx.parcelaAtual && tx.totalParcelas
+          ? `${tx.parcelaAtual}/${tx.totalParcelas}`
+          : '';
+      const hay = `${tx.descricao} ${tx.obs} ${tx.categoria} ${tx.titular} ${tx.data} ${tx.cartaoNome || ''} ${parcelaInfo}`.toLowerCase();
       if (!hay.includes(searchLower)) {
         return false;
       }
@@ -417,6 +422,7 @@ export function computeBankHistory(
 export function buildPeriodExportPayload(
   snapshot: PeriodSnapshot,
   categorias: CategoryConfig[] = [],
+  cartoes: CreditCardConfig[] = [],
 ): PeriodExportPayload {
   return {
     schemaVersion: '1.0',
@@ -425,6 +431,7 @@ export function buildPeriodExportPayload(
     transacoes: snapshot.lancamentos,
     bancos: snapshot.bancos,
     categorias,
+    cartoes,
     metas: snapshot.metas,
   };
 }
@@ -448,6 +455,7 @@ interface LegacyOrStandardImportPayload {
   lancamentos?: Transaction[];
   bancos?: BankAccount[];
   categorias?: CategoryConfig[];
+  cartoes?: CreditCardConfig[];
   metas?: PeriodSnapshot['metas'];
 }
 
@@ -495,6 +503,10 @@ export function parseAndMergeImportedPayloads(
   }));
   const nextTitulares = new Set(currentStore.titulares);
   const nextFormas = new Set(currentStore.formasPagamento);
+  const baseCartoes = Array.isArray(currentStore.cartoes)
+    ? currentStore.cartoes
+    : DEFAULT_CREDIT_CARDS;
+  const nextCartoes: CreditCardConfig[] = baseCartoes.map((c) => ({ ...c }));
 
   for (const file of rawFiles) {
     try {
@@ -550,6 +562,34 @@ export function parseAndMergeImportedPayloads(
         }
       }
 
+      // Merge imported cartoes block without duplicating by id or normalized name
+      if (Array.isArray(parsed.cartoes)) {
+        for (const impCard of parsed.cartoes) {
+          if (!impCard || typeof impCard.nome !== 'string') continue;
+          const cleanName = impCard.nome.trim();
+          if (!cleanName) continue;
+          const dueDay = Math.min(
+            Math.max(Math.round(Number(impCard.diaVencimento) || 10), 1),
+            31,
+          );
+          const existingCard = nextCartoes.find(
+            (c) =>
+              (impCard.id && c.id === impCard.id) ||
+              c.nome.toLowerCase() === cleanName.toLowerCase(),
+          );
+          if (!existingCard) {
+            nextCartoes.push({
+              id: impCard.id || generateId('cc'),
+              nome: cleanName,
+              diaVencimento: dueDay,
+            });
+          } else {
+            existingCard.nome = cleanName;
+            existingCard.diaVencimento = dueDay;
+          }
+        }
+      }
+
       const sanitizedLancamentos: Transaction[] = rawTransactions.map((tx) => {
         const parsedDate = parseBRDate(tx.data || '');
         const txMes = parsedDate.isValid ? parsedDate.mes : tx.mes || mes;
@@ -578,7 +618,7 @@ export function parseAndMergeImportedPayloads(
         if (titularName) nextTitulares.add(titularName);
         if (formaName) nextFormas.add(formaName);
 
-        return {
+        const baseTx: Transaction = {
           id: tx.id || generateId('tx'),
           data: tx.data || `01/${String(txMes).padStart(2, '0')}/${txAno}`,
           mes: txMes,
@@ -591,6 +631,16 @@ export function parseAndMergeImportedPayloads(
           formaPagamento: formaName,
           titular: titularName,
         };
+
+        if (tx.cartaoId) baseTx.cartaoId = String(tx.cartaoId);
+        if (tx.cartaoNome) baseTx.cartaoNome = String(tx.cartaoNome);
+        if (typeof tx.parcelaAtual === 'number') baseTx.parcelaAtual = tx.parcelaAtual;
+        if (typeof tx.totalParcelas === 'number') baseTx.totalParcelas = tx.totalParcelas;
+        if (tx.parcelamentoGrupoId) {
+          baseTx.parcelamentoGrupoId = String(tx.parcelamentoGrupoId);
+        }
+
+        return baseTx;
       });
 
       const existing = nextPeriods[periodoKey];
@@ -665,6 +715,7 @@ export function parseAndMergeImportedPayloads(
       categorias: nextCategories,
       titulares: Array.from(nextTitulares),
       formasPagamento: Array.from(nextFormas),
+      cartoes: nextCartoes,
     },
     importedPeriods,
     importedTransactionsCount,
@@ -746,6 +797,214 @@ export function resetStoreForFreshStart(store: FinanceStore): FinanceStore {
         metas: {},
       },
     },
+  };
+}
+
+export type InstallmentValueMode = 'TOTAL' | 'PARCELA';
+
+export function clampDayToMonth(ano: number, mes: number, dia: number): number {
+  const safeDay = Math.max(1, Math.min(31, Math.round(dia)));
+  const maxDayInMonth = new Date(ano, mes, 0).getDate();
+  return Math.min(safeDay, maxDayInMonth);
+}
+
+export function addMonthsToYearMonth(
+  ano: number,
+  mes: number,
+  offset: number,
+): { ano: number; mes: number } {
+  const totalMonths = ano * 12 + (mes - 1) + offset;
+  return {
+    ano: Math.floor(totalMonths / 12),
+    mes: (((totalMonths % 12) + 12) % 12) + 1,
+  };
+}
+
+export function getDefaultFirstInstallmentStart(
+  purchaseAno: number,
+  purchaseMes: number,
+  purchaseDia: number,
+  dueDay: number,
+): { ano: number; mes: number; isNextMonth: boolean } {
+  if (purchaseDia > dueDay) {
+    const next = addMonthsToYearMonth(purchaseAno, purchaseMes, 1);
+    return { ano: next.ano, mes: next.mes, isNextMonth: true };
+  }
+  return { ano: purchaseAno, mes: purchaseMes, isNextMonth: false };
+}
+
+export function splitAmountIntoInstallments(
+  amount: number,
+  installments: number,
+  mode: InstallmentValueMode,
+): number[] {
+  const n = Math.max(1, Math.min(24, Math.round(installments)));
+  const rawCents = Math.max(0, Math.round((Number(amount) || 0) * 100));
+
+  if (mode === 'PARCELA' || n === 1) {
+    const unitValue = rawCents / 100;
+    return Array.from({ length: n }, () => unitValue);
+  }
+
+  const baseCents = Math.floor(rawCents / n);
+  const remainderCents = rawCents - baseCents * n;
+
+  return Array.from({ length: n }, (_, idx) => {
+    const cents = baseCents + (idx < remainderCents ? 1 : 0);
+    return cents / 100;
+  });
+}
+
+export interface BuildInstallmentPlanInput {
+  data: string;
+  tipo: TransactionType;
+  categoria: string;
+  descricao: string;
+  valor: number;
+  obs: string;
+  formaPagamento: string;
+  titular: string;
+  card: CreditCardConfig | null;
+  parcelas: number;
+  valorModo: InstallmentValueMode;
+  primeiraParcelaOffset?: 0 | 1; // 0 = same month as purchase, 1 = next month
+}
+
+export interface InstallmentPlanResult {
+  items: Array<Omit<Transaction, 'id'>>;
+  totalValor: number;
+  valorParcelaBase: number;
+}
+
+export function buildInstallmentPlan(
+  input: BuildInstallmentPlanInput,
+): InstallmentPlanResult {
+  const parsed = parseBRDate(input.data);
+  const baseAno = parsed.isValid ? parsed.ano : new Date().getFullYear();
+  const baseMes = parsed.isValid ? parsed.mes : new Date().getMonth() + 1;
+  const baseDia = parsed.isValid ? parsed.dia : 1;
+  const n = Math.max(1, Math.min(24, Math.round(input.parcelas || 1)));
+  const trimmedObs = input.obs.trim();
+  const isCC = input.formaPagamento.trim().toUpperCase() === 'CC';
+
+  // Single-payment (1x) preserves standard single transaction behavior
+  if (!isCC || n === 1) {
+    const cleanVal = Math.round((Number(input.valor) || 0) * 100) / 100;
+    const singleObs =
+      isCC && input.card
+        ? trimmedObs
+          ? `${trimmedObs} · ${input.card.nome}`
+          : input.card.nome
+        : trimmedObs;
+
+    const singleTx: Omit<Transaction, 'id'> = {
+      data: input.data,
+      mes: baseMes,
+      ano: baseAno,
+      tipo: input.tipo,
+      categoria: input.categoria,
+      descricao: input.descricao,
+      valor: cleanVal,
+      obs: singleObs,
+      formaPagamento: input.formaPagamento,
+      titular: input.titular,
+      ...(isCC && input.card
+        ? {
+            cartaoId: input.card.id,
+            cartaoNome: input.card.nome,
+          }
+        : {}),
+    };
+
+    return {
+      items: [singleTx],
+      totalValor: cleanVal,
+      valorParcelaBase: cleanVal,
+    };
+  }
+
+  const dueDay = input.card ? input.card.diaVencimento : baseDia;
+  const startOffset =
+    typeof input.primeiraParcelaOffset === 'number'
+      ? input.primeiraParcelaOffset
+      : getDefaultFirstInstallmentStart(baseAno, baseMes, baseDia, dueDay).isNextMonth
+        ? 1
+        : 0;
+  const startYM = addMonthsToYearMonth(baseAno, baseMes, startOffset);
+  const amounts = splitAmountIntoInstallments(input.valor, n, input.valorModo);
+  const groupId = generateId('parc');
+
+  const items: Array<Omit<Transaction, 'id'>> = amounts.map((val, idx) => {
+    const targetYM = addMonthsToYearMonth(startYM.ano, startYM.mes, idx);
+    const alignedDay = clampDayToMonth(targetYM.ano, targetYM.mes, dueDay);
+    const formattedDate = `${String(alignedDay).padStart(2, '0')}/${String(targetYM.mes).padStart(2, '0')}/${targetYM.ano}`;
+    const parcelaTag = `${idx + 1}/${n}`;
+    const cardTag = input.card
+      ? `${input.card.nome} (${parcelaTag})`
+      : `Parcela ${parcelaTag}`;
+    const fullObs = trimmedObs ? `${trimmedObs} · ${cardTag}` : cardTag;
+
+    return {
+      data: formattedDate,
+      mes: targetYM.mes,
+      ano: targetYM.ano,
+      tipo: input.tipo,
+      categoria: input.categoria,
+      descricao: input.descricao,
+      valor: val,
+      obs: fullObs,
+      formaPagamento: input.formaPagamento,
+      titular: input.titular,
+      cartaoId: input.card?.id,
+      cartaoNome: input.card?.nome,
+      parcelaAtual: idx + 1,
+      totalParcelas: n,
+      parcelamentoGrupoId: groupId,
+    };
+  });
+
+  const totalCents = amounts.reduce((sum, v) => sum + Math.round(v * 100), 0);
+  return {
+    items,
+    totalValor: totalCents / 100,
+    valorParcelaBase: amounts[amounts.length - 1] ?? 0,
+  };
+}
+
+export function addTransactionsBatchToStore(
+  store: FinanceStore,
+  items: Array<Omit<Transaction, 'id'>>,
+): FinanceStore {
+  if (items.length === 0) return store;
+
+  const nextPeriods = { ...store.periods };
+
+  // Insert in reverse so items[0] ends up ahead in chronological/creation order when prepending,
+  // or prepend per period in order. Grouping by period and prepending preserves installment order.
+  const byPeriod = new Map<string, Transaction[]>();
+  for (const item of items) {
+    const key = getPeriodKey(item.ano, item.mes);
+    const existingList = byPeriod.get(key) || [];
+    existingList.push({ ...item, id: generateId('tx') });
+    byPeriod.set(key, existingList);
+  }
+
+  for (const [key, newTxs] of byPeriod.entries()) {
+    const sample = newTxs[0];
+    const targetSnap = getOrCreatePeriodSnapshot(
+      { ...store, periods: nextPeriods },
+      sample.ano,
+      sample.mes,
+    );
+    nextPeriods[key] = {
+      ...targetSnap,
+      lancamentos: [...newTxs, ...targetSnap.lancamentos],
+    };
+  }
+
+  return {
+    ...store,
+    periods: nextPeriods,
   };
 }
 

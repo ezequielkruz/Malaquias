@@ -148,6 +148,13 @@ export const ControleTab: React.FC<ControleTabProps> = ({
       obs: tx.obs,
       formaPagamento: tx.formaPagamento,
       titular: tx.titular,
+      ...(tx.cartaoId ? { cartaoId: tx.cartaoId } : {}),
+      ...(tx.cartaoNome ? { cartaoNome: tx.cartaoNome } : {}),
+      ...(tx.parcelaAtual ? { parcelaAtual: tx.parcelaAtual } : {}),
+      ...(tx.totalParcelas ? { totalParcelas: tx.totalParcelas } : {}),
+      ...(tx.parcelamentoGrupoId
+        ? { parcelamentoGrupoId: tx.parcelamentoGrupoId }
+        : {}),
     });
   };
 
@@ -686,9 +693,17 @@ export const ControleTab: React.FC<ControleTabProps> = ({
                 )}
 
                 <div className="pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between gap-2">
-                  <div className="text-xs text-[var(--text-muted)] font-mono-nums">
-                    <span>{tx.formaPagamento}</span>
-                    <span className="mx-1.5" aria-hidden="true">·</span>
+                  <div className="flex flex-wrap items-center gap-1.5 text-xs text-[var(--text-muted)] font-mono-nums">
+                    <span>
+                      {tx.formaPagamento}
+                      {tx.cartaoNome ? ` · ${tx.cartaoNome}` : ''}
+                    </span>
+                    {tx.parcelaAtual && tx.totalParcelas && (
+                      <span className="px-1.5 py-0.5 rounded border border-[var(--accent-blue-border)] bg-[var(--accent-blue-bg)] text-[var(--accent-blue)] text-[11px] font-semibold">
+                        {tx.parcelaAtual}/{tx.totalParcelas}
+                      </span>
+                    )}
+                    <span aria-hidden="true">·</span>
                     <span className="font-sans">{tx.titular}</span>
                   </div>
 
@@ -1106,7 +1121,17 @@ export const ControleTab: React.FC<ControleTabProps> = ({
                         {tx.obs || '—'}
                       </td>
                       <td className="py-2.5 px-3 font-mono-nums text-xs text-[var(--text-secondary)]">
-                        {tx.formaPagamento}
+                        <div className="flex flex-wrap items-center gap-1">
+                          <span>
+                            {tx.formaPagamento}
+                            {tx.cartaoNome ? ` · ${tx.cartaoNome}` : ''}
+                          </span>
+                          {tx.parcelaAtual && tx.totalParcelas && (
+                            <span className="px-1.5 py-0.5 rounded border border-[var(--accent-blue-border)] bg-[var(--accent-blue-bg)] text-[var(--accent-blue)] text-[10px] font-semibold">
+                              {tx.parcelaAtual}/{tx.totalParcelas}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-2.5 px-3 text-xs sm:text-sm text-[var(--text-secondary)]">
                         {tx.titular}

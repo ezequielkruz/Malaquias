@@ -1,6 +1,7 @@
 import type {
   BankAccount,
   CategoryConfig,
+  CreditCardConfig,
   FinanceStore,
   PeriodSnapshot,
 } from '../types/finance';
@@ -137,6 +138,19 @@ export const DEFAULT_TITULARES = ['ezequiel', 'familia'];
 
 export const DEFAULT_PAYMENT_METHODS = ['PIXD', 'PIXR', 'CC', 'DINHEIRO', 'BOLETO'];
 
+export const DEFAULT_CREDIT_CARDS: CreditCardConfig[] = [
+  {
+    id: 'cc_nubank',
+    nome: 'Nubank',
+    diaVencimento: 10,
+  },
+  {
+    id: 'cc_santander',
+    nome: 'Santander',
+    diaVencimento: 15,
+  },
+];
+
 export const DEFAULT_BANKS: BankAccount[] = [
   {
     id: 'bank_nubank',
@@ -190,6 +204,7 @@ export function createInitialFinanceStore(): FinanceStore {
     })),
     titulares: [...DEFAULT_TITULARES],
     formasPagamento: [...DEFAULT_PAYMENT_METHODS],
+    cartoes: DEFAULT_CREDIT_CARDS.map((c) => ({ ...c })),
   };
 }
 
