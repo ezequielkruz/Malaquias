@@ -887,7 +887,16 @@ export function buildInstallmentPlan(
   const trimmedObs = input.obs.trim();
   const isCC = input.formaPagamento.trim().toUpperCase() === 'CC';
 
-  // Single-payment (1x) preserves standard single transaction behavior
+  const dueDay = input.card ? input.card.diaVencimento : baseDia;
+  const startOffset = isCC
+    ? typeof input.primeiraParcelaOffset === 'number'
+      ? input.primeiraParcelaOffset
+      : getDefaultFirstInstallmentStart(baseAno, baseMes, baseDia, dueDay).isNextMonth
+        ? 1
+        : 0
+    : 0;
+
+  // Single-payment (1x) preserves single-transaction behavior while honoring CC due-day competence routing
   if (!isCC || n === 1) {
     const cleanVal = Math.round((Number(input.valor) || 0) * 100) / 100;
     const singleObs =
@@ -897,10 +906,18 @@ export function buildInstallmentPlan(
           : input.card.nome
         : trimmedObs;
 
+    const targetYM = isCC
+      ? addMonthsToYearMonth(baseAno, baseMes, startOffset)
+      : { ano: baseAno, mes: baseMes };
+    const singleDate =
+      isCC && startOffset > 0
+        ? `${String(clampDayToMonth(targetYM.ano, targetYM.mes, dueDay)).padStart(2, '0')}/${String(targetYM.mes).padStart(2, '0')}/${targetYM.ano}`
+        : input.data;
+
     const singleTx: Omit<Transaction, 'id'> = {
-      data: input.data,
-      mes: baseMes,
-      ano: baseAno,
+      data: singleDate,
+      mes: targetYM.mes,
+      ano: targetYM.ano,
       tipo: input.tipo,
       categoria: input.categoria,
       descricao: input.descricao,
@@ -923,13 +940,6 @@ export function buildInstallmentPlan(
     };
   }
 
-  const dueDay = input.card ? input.card.diaVencimento : baseDia;
-  const startOffset =
-    typeof input.primeiraParcelaOffset === 'number'
-      ? input.primeiraParcelaOffset
-      : getDefaultFirstInstallmentStart(baseAno, baseMes, baseDia, dueDay).isNextMonth
-        ? 1
-        : 0;
   const startYM = addMonthsToYearMonth(baseAno, baseMes, startOffset);
   const amounts = splitAmountIntoInstallments(input.valor, n, input.valorModo);
   const groupId = generateId('parc');
@@ -1007,4 +1017,199 @@ export function addTransactionsBatchToStore(
     periods: nextPeriods,
   };
 }
+
+export interface CumulativePeriodPoint {
+  periodoKey: string; // "YYYY-MM"
+  ano: number;
+  mes: number;
+  receitas: number;
+  despesas: number;
+  saldoMes: number;
+  saldoAcumulado: number;
+  despesasCount: number;
+  parcelasCount: number;
+  status: 'historico' | 'atual' | 'futuro';
+}
+
+export interface CumulativeAndFutureOverview {
+  activeKey: string;
+  saldoAcumuladoAnterior: number;
+  saldoMesAtual: number;
+  saldoAcumuladoAtePeriodo: number;
+  periodosAteAtualCount: number;
+  receitasAcumuladasAtePeriodo: number;
+  despesasAcumuladasAtePeriodo: number;
+  despesasFuturasTotal: number;
+  receitasFuturasTotal: number;
+  despesasFuturasCount: number;
+  parcelasFuturasCount: number;
+  mesesFuturosCount: number;
+  proximoMesComDespesa: {
+    periodoKey: string;
+    ano: number;
+    mes: number;
+    valor: number;
+  } | null;
+  timeline: CumulativePeriodPoint[];
+}
+
+export function computeCumulativeAndFutureOverview(
+  periods: Record<string, PeriodSnapshot>,
+  activeAno: number,
+  activeMes: number,
+  titularFilter = 'Todos',
+): CumulativeAndFutureOverview {
+  const activeKey = getPeriodKey(activeAno, activeMes);
+
+  // Deduplicate transactions across all stored periods by tx.id
+  const seenIds = new Set<string>();
+  const allTransactions: Transaction[] = [];
+  for (const snap of Object.values(periods)) {
+    for (const tx of snap.lancamentos) {
+      if (seenIds.has(tx.id)) continue;
+      seenIds.add(tx.id);
+      if (
+        titularFilter !== 'Todos' &&
+        tx.titular.toLowerCase() !== titularFilter.toLowerCase()
+      ) {
+        continue;
+      }
+      allTransactions.push(tx);
+    }
+  }
+
+  interface Bucket {
+    ano: number;
+    mes: number;
+    receitas: number;
+    despesas: number;
+    despesasCount: number;
+    parcelasCount: number;
+  }
+
+  const buckets = new Map<string, Bucket>();
+  buckets.set(activeKey, {
+    ano: activeAno,
+    mes: activeMes,
+    receitas: 0,
+    despesas: 0,
+    despesasCount: 0,
+    parcelasCount: 0,
+  });
+
+  for (const tx of allTransactions) {
+    const key = getPeriodKey(tx.ano, tx.mes);
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = {
+        ano: tx.ano,
+        mes: tx.mes,
+        receitas: 0,
+        despesas: 0,
+        despesasCount: 0,
+        parcelasCount: 0,
+      };
+      buckets.set(key, bucket);
+    }
+
+    const val = Number(tx.valor) || 0;
+    if (tx.tipo === 'RECEITA') {
+      bucket.receitas += val;
+    } else {
+      bucket.despesas += val;
+      bucket.despesasCount += 1;
+      if (tx.parcelaAtual && tx.totalParcelas && tx.totalParcelas > 1) {
+        bucket.parcelasCount += 1;
+      }
+    }
+  }
+
+  const sortedKeys = Array.from(buckets.keys()).sort((a, b) =>
+    a.localeCompare(b),
+  );
+
+  let runningSaldoAcumulado = 0;
+  let saldoAcumuladoAnterior = 0;
+  let saldoMesAtual = 0;
+  let periodosAteAtualCount = 0;
+  let receitasAcumuladasAtePeriodo = 0;
+  let despesasAcumuladasAtePeriodo = 0;
+  let despesasFuturasTotal = 0;
+  let receitasFuturasTotal = 0;
+  let despesasFuturasCount = 0;
+  let parcelasFuturasCount = 0;
+  let mesesFuturosCount = 0;
+  let proximoMesComDespesa: CumulativeAndFutureOverview['proximoMesComDespesa'] =
+    null;
+
+  const timeline: CumulativePeriodPoint[] = [];
+
+  for (const key of sortedKeys) {
+    const b = buckets.get(key)!;
+    const saldoMes = b.receitas - b.despesas;
+    runningSaldoAcumulado += saldoMes;
+
+    const status: CumulativePeriodPoint['status'] =
+      key < activeKey ? 'historico' : key === activeKey ? 'atual' : 'futuro';
+
+    if (status === 'historico') {
+      saldoAcumuladoAnterior += saldoMes;
+    } else if (status === 'atual') {
+      saldoMesAtual = saldoMes;
+    }
+
+    if (key <= activeKey) {
+      periodosAteAtualCount += 1;
+      receitasAcumuladasAtePeriodo += b.receitas;
+      despesasAcumuladasAtePeriodo += b.despesas;
+    } else {
+      despesasFuturasTotal += b.despesas;
+      receitasFuturasTotal += b.receitas;
+      despesasFuturasCount += b.despesasCount;
+      parcelasFuturasCount += b.parcelasCount;
+      if (b.despesas > 0) {
+        mesesFuturosCount += 1;
+        if (!proximoMesComDespesa) {
+          proximoMesComDespesa = {
+            periodoKey: key,
+            ano: b.ano,
+            mes: b.mes,
+            valor: b.despesas,
+          };
+        }
+      }
+    }
+
+    timeline.push({
+      periodoKey: key,
+      ano: b.ano,
+      mes: b.mes,
+      receitas: b.receitas,
+      despesas: b.despesas,
+      saldoMes,
+      saldoAcumulado: runningSaldoAcumulado,
+      despesasCount: b.despesasCount,
+      parcelasCount: b.parcelasCount,
+      status,
+    });
+  }
+
+  return {
+    activeKey,
+    saldoAcumuladoAnterior,
+    saldoMesAtual,
+    saldoAcumuladoAtePeriodo: saldoAcumuladoAnterior + saldoMesAtual,
+    periodosAteAtualCount,
+    receitasAcumuladasAtePeriodo,
+    despesasAcumuladasAtePeriodo,
+    despesasFuturasTotal,
+    receitasFuturasTotal,
+    despesasFuturasCount,
+    parcelasFuturasCount,
+    mesesFuturosCount,
+    proximoMesComDespesa,
+    timeline,
+  };
+}
+
 

@@ -528,6 +528,7 @@ export default function App() {
             mes={store.activeMes}
             transactions={activePeriod.lancamentos}
             banks={activePeriod.bancos}
+            periods={store.periods}
             titulares={store.titulares}
             onOpenNewTransaction={() => setIsTxModalOpen(true)}
             onNavigateToBancos={() => setActiveTab('bancos')}

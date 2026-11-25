@@ -10,6 +10,7 @@ import {
   computeBankHistory,
   computeBankMetrics,
   computeConsolidatedBanks,
+  computeCumulativeAndFutureOverview,
   computeDashboardSummary,
   filterTransactions,
   getDefaultFirstInstallmentStart,
@@ -576,6 +577,194 @@ test('credit card installment planner aligns due day, handles February clamping 
     1,
   );
 });
+
+test('1x CC purchases after card due day route to next month automatically and allow manual override', () => {
+  const card18 = { id: 'cc_18', nome: 'Santander', diaVencimento: 18 };
+
+  // Purchase on 20/11/2026 (> 18) routes to 12/2026 automatically
+  const autoNext = buildInstallmentPlan({
+    data: '20/11/2026',
+    tipo: 'DESPESA',
+    categoria: 'ALIMENTAÇÃO',
+    descricao: 'Restaurante',
+    valor: 95,
+    obs: 'Jantar',
+    formaPagamento: 'CC',
+    titular: 'ezequiel',
+    card: card18,
+    parcelas: 1,
+    valorModo: 'TOTAL',
+  });
+  assert.equal(autoNext.items.length, 1);
+  assert.equal(autoNext.items[0].mes, 12);
+  assert.equal(autoNext.items[0].ano, 2026);
+  assert.equal(autoNext.items[0].data, '18/12/2026');
+
+  // Manual override to offset 0 keeps in 11/2026 with purchase date
+  const forcedSame = buildInstallmentPlan({
+    data: '20/11/2026',
+    tipo: 'DESPESA',
+    categoria: 'ALIMENTAÇÃO',
+    descricao: 'Restaurante',
+    valor: 95,
+    obs: 'Jantar',
+    formaPagamento: 'CC',
+    titular: 'ezequiel',
+    card: card18,
+    parcelas: 1,
+    valorModo: 'TOTAL',
+    primeiraParcelaOffset: 0,
+  });
+  assert.equal(forcedSame.items[0].mes, 11);
+  assert.equal(forcedSame.items[0].ano, 2026);
+  assert.equal(forcedSame.items[0].data, '20/11/2026');
+});
+
+test('computeCumulativeAndFutureOverview computes accumulated balance and future scheduled expenses across periods', () => {
+  const store = createInitialFinanceStore();
+  store.periods['2026-10'] = {
+    periodoKey: '2026-10',
+    ano: 2026,
+    mes: 10,
+    lancamentos: [
+      {
+        id: 't_oct_1',
+        data: '05/10/2026',
+        mes: 10,
+        ano: 2026,
+        tipo: 'RECEITA',
+        categoria: 'RECEITAS',
+        descricao: 'Salário',
+        valor: 3000,
+        obs: '',
+        formaPagamento: 'PIXR',
+        titular: 'ezequiel',
+      },
+      {
+        id: 't_oct_2',
+        data: '10/10/2026',
+        mes: 10,
+        ano: 2026,
+        tipo: 'DESPESA',
+        categoria: 'CASA',
+        descricao: 'Aluguel',
+        valor: 1000,
+        obs: '',
+        formaPagamento: 'PIXD',
+        titular: 'ezequiel',
+      },
+    ],
+    bancos: [],
+    metas: {},
+  };
+  store.periods['2026-11'] = {
+    periodoKey: '2026-11',
+    ano: 2026,
+    mes: 11,
+    lancamentos: [
+      {
+        id: 't_nov_1',
+        data: '05/11/2026',
+        mes: 11,
+        ano: 2026,
+        tipo: 'RECEITA',
+        categoria: 'RECEITAS',
+        descricao: 'Salário',
+        valor: 1000,
+        obs: '',
+        formaPagamento: 'PIXR',
+        titular: 'ezequiel',
+      },
+      {
+        id: 't_nov_2',
+        data: '12/11/2026',
+        mes: 11,
+        ano: 2026,
+        tipo: 'DESPESA',
+        categoria: 'LAZER',
+        descricao: 'Viagens',
+        valor: 500,
+        obs: '',
+        formaPagamento: 'PIXD',
+        titular: 'familia',
+      },
+    ],
+    bancos: [],
+    metas: {},
+  };
+  store.periods['2026-12'] = {
+    periodoKey: '2026-12',
+    ano: 2026,
+    mes: 12,
+    lancamentos: [
+      {
+        id: 't_dec_1',
+        data: '18/12/2026',
+        mes: 12,
+        ano: 2026,
+        tipo: 'DESPESA',
+        categoria: 'CASA',
+        descricao: 'Eletrodomésticos',
+        valor: 200,
+        obs: 'Santander (1/2)',
+        formaPagamento: 'CC',
+        titular: 'ezequiel',
+        parcelaAtual: 1,
+        totalParcelas: 2,
+      },
+    ],
+    bancos: [],
+    metas: {},
+  };
+  store.periods['2027-01'] = {
+    periodoKey: '2027-01',
+    ano: 2027,
+    mes: 1,
+    lancamentos: [
+      {
+        id: 't_jan_1',
+        data: '18/01/2027',
+        mes: 1,
+        ano: 2027,
+        tipo: 'DESPESA',
+        categoria: 'CASA',
+        descricao: 'Eletrodomésticos',
+        valor: 200,
+        obs: 'Santander (2/2)',
+        formaPagamento: 'CC',
+        titular: 'ezequiel',
+        parcelaAtual: 2,
+        totalParcelas: 2,
+      },
+    ],
+    bancos: [],
+    metas: {},
+  };
+
+  const novAll = computeCumulativeAndFutureOverview(store.periods, 2026, 11, 'Todos');
+  assert.equal(novAll.saldoAcumuladoAnterior, 2000);
+  assert.equal(novAll.saldoMesAtual, 500);
+  assert.equal(novAll.saldoAcumuladoAtePeriodo, 2500);
+  assert.equal(novAll.despesasFuturasTotal, 400);
+  assert.equal(novAll.despesasFuturasCount, 2);
+  assert.equal(novAll.parcelasFuturasCount, 2);
+  assert.equal(novAll.mesesFuturosCount, 2);
+  assert.equal(novAll.proximoMesComDespesa?.periodoKey, '2026-12');
+  assert.equal(novAll.proximoMesComDespesa?.valor, 200);
+  assert.equal(novAll.timeline.length, 4);
+  assert.equal(novAll.timeline[3].saldoAcumulado, 2100);
+
+  // Filter by titular ezequiel excludes familia R$ 500 expense in Nov
+  const novEzequiel = computeCumulativeAndFutureOverview(
+    store.periods,
+    2026,
+    11,
+    'ezequiel',
+  );
+  assert.equal(novEzequiel.saldoMesAtual, 1000);
+  assert.equal(novEzequiel.saldoAcumuladoAtePeriodo, 3000);
+});
+
 
 
 

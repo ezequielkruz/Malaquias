@@ -167,7 +167,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   }, [parsedDate, activeAno, activeMes]);
 
   const installmentPlan = useMemo(() => {
-    if (!isCreditCard || initialTransaction || parcelas <= 1) {
+    if (!isCreditCard || initialTransaction) {
       return null;
     }
     return buildInstallmentPlan({
@@ -672,42 +672,50 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 )}
               </div>
 
-              {!initialTransaction && parcelas > 1 && (
+              {!initialTransaction && (
                 <div className="space-y-3 pt-1">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <span className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
-                        Valor informado representa:
-                      </span>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setValorModo('TOTAL')}
-                          className={`py-1.5 px-2.5 rounded-md text-xs font-semibold border-[1.5px] transition-colors cursor-pointer ${
-                            valorModo === 'TOTAL'
-                              ? 'bg-[var(--card-gold-bg)] border-[var(--accent-gold-border)] text-[var(--text-primary)]'
-                              : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                          }`}
-                        >
-                          Valor Total
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setValorModo('PARCELA')}
-                          className={`py-1.5 px-2.5 rounded-md text-xs font-semibold border-[1.5px] transition-colors cursor-pointer ${
-                            valorModo === 'PARCELA'
-                              ? 'bg-[var(--card-gold-bg)] border-[var(--accent-gold-border)] text-[var(--text-primary)]'
-                              : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
-                          }`}
-                        >
-                          Por Parcela
-                        </button>
+                  <div
+                    className={`grid grid-cols-1 ${
+                      parcelas > 1 ? 'sm:grid-cols-2' : ''
+                    } gap-3`}
+                  >
+                    {parcelas > 1 && (
+                      <div>
+                        <span className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
+                          Valor informado representa:
+                        </span>
+                        <div className="grid grid-cols-2 gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setValorModo('TOTAL')}
+                            className={`py-1.5 px-2.5 rounded-md text-xs font-semibold border-[1.5px] transition-colors cursor-pointer ${
+                              valorModo === 'TOTAL'
+                                ? 'bg-[var(--card-gold-bg)] border-[var(--accent-gold-border)] text-[var(--text-primary)]'
+                                : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                            }`}
+                          >
+                            Valor Total
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setValorModo('PARCELA')}
+                            className={`py-1.5 px-2.5 rounded-md text-xs font-semibold border-[1.5px] transition-colors cursor-pointer ${
+                              valorModo === 'PARCELA'
+                                ? 'bg-[var(--card-gold-bg)] border-[var(--accent-gold-border)] text-[var(--text-primary)]'
+                                : 'bg-[var(--bg-surface)] border-[var(--border-subtle)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+                            }`}
+                          >
+                            Por Parcela
+                          </button>
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     <div>
                       <span className="block text-xs font-semibold text-[var(--text-secondary)] mb-1.5">
-                        1ª Parcela na fatura de:
+                        {parcelas > 1
+                          ? '1ª Parcela na fatura de:'
+                          : 'Competência da fatura:'}
                       </span>
                       <div className="grid grid-cols-2 gap-1.5">
                         <button
@@ -736,7 +744,21 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                     </div>
                   </div>
 
-                  {/* Installment Schedule Preview */}
+                  {selectedCard && (
+                    <p
+                      data-testid="cc-due-rule-hint"
+                      className="text-[11px] font-medium text-[var(--text-secondary)]"
+                    >
+                      {autoStartInfo.isNextMonth
+                        ? `Compra após o vencimento (dia ${String(selectedCard.diaVencimento).padStart(2, '0')}): competência direcionada automaticamente para ${nextMonthLabel}.`
+                        : `Compra até o vencimento (dia ${String(selectedCard.diaVencimento).padStart(2, '0')}): competência inicial em ${sameMonthLabel}.`}
+                      {manualStartOffset !== null &&
+                        manualStartOffset !== (autoStartInfo.isNextMonth ? 1 : 0) &&
+                        ' (Ajustado manualmente)'}
+                    </p>
+                  )}
+
+                  {/* Installment / Invoice Competence Preview */}
                   {installmentPlan && (
                     <div
                       data-testid="installment-preview"
@@ -748,12 +770,15 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                             className="w-3.5 h-3.5 text-[var(--accent-blue)] shrink-0"
                             aria-hidden="true"
                           />
-                          Prévia das {parcelas} parcelas
+                          {parcelas > 1
+                            ? `Prévia das ${parcelas} parcelas`
+                            : 'Prévia do lançamento na fatura'}
                           {selectedCard ? ` · ${selectedCard.nome}` : ''}
                         </span>
                         <span className="font-mono-nums font-bold text-[var(--text-primary)]">
-                          {parcelas}x de {formatBRL(installmentPlan.valorParcelaBase)} ·
-                          Total {formatBRL(installmentPlan.totalValor)}
+                          {parcelas > 1
+                            ? `${parcelas}x de ${formatBRL(installmentPlan.valorParcelaBase)} · Total ${formatBRL(installmentPlan.totalValor)}`
+                            : formatBRL(installmentPlan.totalValor)}
                         </span>
                       </div>
 
@@ -766,16 +791,19 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                       )}
 
                       <ul className="max-h-36 overflow-y-auto divide-y divide-[var(--border-subtle)] text-xs font-mono-nums pr-1">
-                        {installmentPlan.items.map((item) => (
+                        {installmentPlan.items.map((item, idx) => (
                           <li
-                            key={item.parcelaAtual}
+                            key={item.parcelaAtual ?? idx}
                             className="py-1.5 flex items-center justify-between gap-2 text-[var(--text-secondary)]"
                           >
                             <span>
                               <strong className="text-[var(--text-primary)]">
-                                {item.parcelaAtual}/{item.totalParcelas}
+                                {item.parcelaAtual && item.totalParcelas
+                                  ? `${item.parcelaAtual}/${item.totalParcelas}`
+                                  : 'À vista (1x)'}
                               </strong>{' '}
-                              · {item.data} ({MONTH_ABBR[item.mes - 1]}/{item.ano})
+                              · {item.data} (Fatura {MONTH_ABBR[item.mes - 1]}/
+                              {item.ano})
                             </span>
                             <span className="font-semibold text-[var(--text-primary)]">
                               {formatBRL(item.valor)}
