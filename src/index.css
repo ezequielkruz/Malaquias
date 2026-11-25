@@ -1,0 +1,362 @@
+@import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
+
+@layer base {
+  :root,
+  [data-theme="vibrant-gold-green-blue"] {
+    --font-display: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-sans: 'DM Sans', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+
+    --bg-canvas: #F3EFE0;
+    --bg-header: #FFFDF7;
+    --bg-surface: #FFFDF8;
+    --bg-surface-alt: #F4ECD6;
+    --bg-surface-hover: rgba(37, 99, 235, 0.08);
+    --bg-input: #FFFFFF;
+    --bg-modal-backdrop: rgba(15, 23, 42, 0.58);
+
+    --border-subtle: #D9B45A;
+    --border-strong: #B45309;
+    --card-shadow: 0 6px 18px -6px rgba(120, 82, 12, 0.14), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+    /* High-contrast dark ink on light themes */
+    --text-primary: #0F172A;
+    --text-secondary: #1E293B;
+    --text-muted: #374151;
+    --text-placeholder: #4B5563;
+
+    /* Saturated Emerald Green */
+    --accent-primary: #047857;
+    --accent-primary-hover: #065F46;
+    --accent-primary-text: #FFFFFF;
+
+    /* Strong Saturated Gold / Amber */
+    --accent-underline: #B45309;
+    --accent-gold: #B45309;
+    --accent-gold-hover: #92400E;
+    --accent-gold-text: #FFFFFF;
+    --accent-gold-bg: #FEF3C7;
+    --accent-gold-border: #D97706;
+
+    /* Vivid Royal Blue */
+    --accent-secondary: #1D4ED8;
+    --accent-blue: #1D4ED8;
+    --accent-blue-bg: #DBEAFE;
+    --accent-blue-border: #2563EB;
+
+    --accent-soft-bg: #FEF3C7;
+    --accent-soft-border: #D97706;
+
+    /* Card Surface Tints & Strong Borders */
+    --card-income-bg: #ECFDF5;
+    --card-income-border: #059669;
+    --card-expense-bg: #FEF2F2;
+    --card-expense-border: #DC2626;
+    --card-gold-bg: #FEF3C7;
+    --card-gold-border: #D97706;
+    --card-blue-bg: #EFF6FF;
+    --card-blue-border: #2563EB;
+    --card-cyan-bg: #E0F2FE;
+    --card-cyan-border: #0284C7;
+
+    --semantic-income: #047857;
+    --semantic-income-bg: #D1FAE5;
+    --semantic-expense: #B91C1C;
+    --semantic-expense-bg: #FEE2E2;
+    --semantic-invest: #1D4ED8;
+    --semantic-warning: #B45309;
+
+    --chart-track: #E6DEC8;
+    --chart-grid: rgba(37, 99, 235, 0.16);
+    --pivot-income-bg: #D1FAE5;
+    --pivot-expense-bg: #FEE2E2;
+    color-scheme: light;
+  }
+
+  [data-theme="gold-light"] {
+    --bg-canvas: #F5EEDB;
+    --bg-header: #FFFBF0;
+    --bg-surface: #FFFDF6;
+    --bg-surface-alt: #F3E6C3;
+    --bg-surface-hover: rgba(180, 83, 9, 0.08);
+    --bg-input: #FFFFFF;
+    --bg-modal-backdrop: rgba(24, 24, 27, 0.56);
+
+    --border-subtle: #D4AF37;
+    --border-strong: #B45309;
+    --card-shadow: 0 6px 18px -6px rgba(146, 64, 14, 0.15), inset 0 1px 0 rgba(255, 255, 255, 0.85);
+
+    --text-primary: #18181B;
+    --text-secondary: #27272A;
+    --text-muted: #3F3F46;
+    --text-placeholder: #52525B;
+
+    --accent-primary: #047857;
+    --accent-primary-hover: #065F46;
+    --accent-primary-text: #FFFFFF;
+
+    --accent-underline: #B45309;
+    --accent-gold: #B45309;
+    --accent-gold-hover: #92400E;
+    --accent-gold-text: #FFFFFF;
+    --accent-gold-bg: #FEF3C7;
+    --accent-gold-border: #D97706;
+
+    --accent-secondary: #1D4ED8;
+    --accent-blue: #1D4ED8;
+    --accent-blue-bg: #DBEAFE;
+    --accent-blue-border: #2563EB;
+
+    --accent-soft-bg: #FEF3C7;
+    --accent-soft-border: #D97706;
+
+    --card-income-bg: #ECFDF5;
+    --card-income-border: #059669;
+    --card-expense-bg: #FEF2F2;
+    --card-expense-border: #DC2626;
+    --card-gold-bg: #FEF3C7;
+    --card-gold-border: #D97706;
+    --card-blue-bg: #EFF6FF;
+    --card-blue-border: #2563EB;
+    --card-cyan-bg: #FFFBEB;
+    --card-cyan-border: #B45309;
+
+    --semantic-income: #047857;
+    --semantic-income-bg: #D1FAE5;
+    --semantic-expense: #BE123C;
+    --semantic-expense-bg: #FFE4E6;
+    --semantic-invest: #1D4ED8;
+    --semantic-warning: #B45309;
+
+    --chart-track: #E8D9B5;
+    --chart-grid: rgba(180, 83, 9, 0.16);
+    --pivot-income-bg: #D1FAE5;
+    --pivot-expense-bg: #FFE4E6;
+    color-scheme: light;
+  }
+
+  [data-theme="clean-light"] {
+    --bg-canvas: #EEF2F7;
+    --bg-header: #FFFFFF;
+    --bg-surface: #FFFFFF;
+    --bg-surface-alt: #E8EEF7;
+    --bg-surface-hover: rgba(37, 99, 235, 0.06);
+    --bg-input: #FFFFFF;
+    --bg-modal-backdrop: rgba(15, 23, 42, 0.55);
+
+    --border-subtle: #94A3B8;
+    --border-strong: #475569;
+    --card-shadow: 0 6px 18px -6px rgba(15, 23, 42, 0.10), inset 0 1px 0 rgba(255, 255, 255, 0.9);
+
+    --text-primary: #0F172A;
+    --text-secondary: #1E293B;
+    --text-muted: #334155;
+    --text-placeholder: #475569;
+
+    --accent-primary: #047857;
+    --accent-primary-hover: #065F46;
+    --accent-primary-text: #FFFFFF;
+
+    --accent-underline: #1D4ED8;
+    --accent-gold: #B45309;
+    --accent-gold-hover: #92400E;
+    --accent-gold-text: #FFFFFF;
+    --accent-gold-bg: #FEF3C7;
+    --accent-gold-border: #D97706;
+
+    --accent-secondary: #1D4ED8;
+    --accent-blue: #1D4ED8;
+    --accent-blue-bg: #DBEAFE;
+    --accent-blue-border: #2563EB;
+
+    --accent-soft-bg: #DBEAFE;
+    --accent-soft-border: #2563EB;
+
+    --card-income-bg: #ECFDF5;
+    --card-income-border: #059669;
+    --card-expense-bg: #FEF2F2;
+    --card-expense-border: #DC2626;
+    --card-gold-bg: #FFFBEB;
+    --card-gold-border: #D97706;
+    --card-blue-bg: #EFF6FF;
+    --card-blue-border: #2563EB;
+    --card-cyan-bg: #F0F9FF;
+    --card-cyan-border: #0284C7;
+
+    --semantic-income: #047857;
+    --semantic-income-bg: #D1FAE5;
+    --semantic-expense: #B91C1C;
+    --semantic-expense-bg: #FEE2E2;
+    --semantic-invest: #1D4ED8;
+    --semantic-warning: #B45309;
+
+    --chart-track: #CBD5E1;
+    --chart-grid: rgba(37, 99, 235, 0.14);
+    --pivot-income-bg: #D1FAE5;
+    --pivot-expense-bg: #FEE2E2;
+    color-scheme: light;
+  }
+
+  [data-theme="gold-dark"] {
+    --bg-canvas: #090805;
+    --bg-header: #120F09;
+    --bg-surface: #19150D;
+    --bg-surface-alt: #241E12;
+    --bg-surface-hover: rgba(251, 191, 36, 0.10);
+    --bg-input: #100D08;
+    --bg-modal-backdrop: rgba(0, 0, 0, 0.80);
+
+    --border-subtle: rgba(245, 158, 11, 0.45);
+    --border-strong: rgba(251, 191, 36, 0.78);
+    --card-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(251, 191, 36, 0.22);
+
+    --text-primary: #FFFFFF;
+    --text-secondary: #FDE68A;
+    --text-muted: #E5D5B0;
+    --text-placeholder: #C4B490;
+
+    --accent-primary: #10B981;
+    --accent-primary-hover: #059669;
+    --accent-primary-text: #042017;
+
+    --accent-underline: #FBBF24;
+    --accent-gold: #FBBF24;
+    --accent-gold-hover: #F59E0B;
+    --accent-gold-text: #090805;
+    --accent-gold-bg: rgba(245, 158, 11, 0.20);
+    --accent-gold-border: #F59E0B;
+
+    --accent-secondary: #60A5FA;
+    --accent-blue: #60A5FA;
+    --accent-blue-bg: rgba(59, 130, 246, 0.18);
+    --accent-blue-border: #3B82F6;
+
+    --accent-soft-bg: rgba(251, 191, 36, 0.18);
+    --accent-soft-border: #F59E0B;
+
+    --card-income-bg: #0D2018;
+    --card-income-border: #34D399;
+    --card-expense-bg: #261217;
+    --card-expense-border: #F87171;
+    --card-gold-bg: #251C0B;
+    --card-gold-border: #FBBF24;
+    --card-blue-bg: #111D33;
+    --card-blue-border: #60A5FA;
+    --card-cyan-bg: #1D180E;
+    --card-cyan-border: #F59E0B;
+
+    --semantic-income: #34D399;
+    --semantic-income-bg: rgba(52, 211, 153, 0.16);
+    --semantic-expense: #F87171;
+    --semantic-expense-bg: rgba(248, 113, 113, 0.16);
+    --semantic-invest: #60A5FA;
+    --semantic-warning: #FBBF24;
+
+    --chart-track: #2E2616;
+    --chart-grid: rgba(251, 191, 36, 0.18);
+    --pivot-income-bg: #112A1E;
+    --pivot-expense-bg: #2F141B;
+    color-scheme: dark;
+  }
+
+  [data-theme="midnight"] {
+    --bg-canvas: #050811;
+    --bg-header: #080E1C;
+    --bg-surface: #0B1324;
+    --bg-surface-alt: #0F1B33;
+    --bg-surface-hover: rgba(59, 130, 246, 0.12);
+    --bg-input: #070D1A;
+    --bg-modal-backdrop: rgba(2, 6, 23, 0.80);
+
+    --border-subtle: rgba(59, 130, 246, 0.36);
+    --border-strong: rgba(56, 189, 248, 0.65);
+    --card-shadow: 0 12px 28px -8px rgba(0, 0, 0, 0.72), inset 0 1px 0 rgba(147, 197, 253, 0.18);
+
+    --text-primary: #F8FAFC;
+    --text-secondary: #E2E8F0;
+    --text-muted: #CBD5E1;
+    --text-placeholder: #94A3B8;
+
+    --accent-primary: #10B981;
+    --accent-primary-hover: #059669;
+    --accent-primary-text: #042017;
+
+    --accent-underline: #FBBF24;
+    --accent-gold: #FBBF24;
+    --accent-gold-hover: #F59E0B;
+    --accent-gold-text: #050811;
+    --accent-gold-bg: rgba(251, 191, 36, 0.18);
+    --accent-gold-border: #F59E0B;
+
+    --accent-secondary: #38BDF8;
+    --accent-blue: #60A5FA;
+    --accent-blue-bg: rgba(59, 130, 246, 0.18);
+    --accent-blue-border: #3B82F6;
+
+    --accent-soft-bg: rgba(16, 185, 129, 0.16);
+    --accent-soft-border: #10B981;
+
+    --card-income-bg: #081D1B;
+    --card-income-border: #10B981;
+    --card-expense-bg: #1E0F1B;
+    --card-expense-border: #F43F5E;
+    --card-gold-bg: #14192E;
+    --card-gold-border: #F59E0B;
+    --card-blue-bg: #0D1B38;
+    --card-blue-border: #3B82F6;
+    --card-cyan-bg: #091C30;
+    --card-cyan-border: #06B6D4;
+
+    --semantic-income: #34D399;
+    --semantic-income-bg: rgba(16, 185, 129, 0.16);
+    --semantic-expense: #FB7185;
+    --semantic-expense-bg: rgba(244, 63, 94, 0.16);
+    --semantic-invest: #60A5FA;
+    --semantic-warning: #FBBF24;
+
+    --chart-track: #172542;
+    --chart-grid: rgba(56, 189, 248, 0.18);
+    --pivot-income-bg: #0A2720;
+    --pivot-expense-bg: #29111E;
+    color-scheme: dark;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    background-color: var(--bg-canvas);
+    color: var(--text-primary);
+    letter-spacing: 0.01em;
+    overflow-x: hidden;
+  }
+
+  h1, h2, h3, h4, .font-display {
+    font-family: var(--font-display);
+    text-wrap: balance;
+  }
+
+  .font-mono-nums {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  select option {
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
+  }
+}
+
+/* Custom subtle scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-canvas);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 3px;
+}

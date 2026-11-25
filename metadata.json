@@ -1,0 +1,6 @@
+{
+  "name": "Gestor Financeiro 3.10",
+  "description": "Controle Financeiro Pessoal e Familiar com fluxo de caixa diário, conciliação bancária, orçamento anual JAN-DEZ e portabilidade JSON por período.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
