@@ -6,6 +6,7 @@ import {
   ChevronRight,
   Download,
   Landmark,
+  Mic,
   Palette,
   PieChart,
   Plus,
@@ -21,6 +22,7 @@ interface HeaderNavProps {
   activeTab: TabId;
   onSelectTab: (tab: TabId) => void;
   onOpenNewTransaction: () => void;
+  onOpenVoiceTransaction?: () => void;
   activeAno: number;
   activeMes: number;
   availableYears: number[];
@@ -49,6 +51,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   activeTab,
   onSelectTab,
   onOpenNewTransaction,
+  onOpenVoiceTransaction,
   activeAno,
   activeMes,
   availableYears,
@@ -130,9 +133,9 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
             })}
           </nav>
 
-          {/* Zone 3: Theme Selector + Primary Action */}
-          <div className="w-full sm:w-auto flex flex-wrap items-center justify-between sm:justify-end gap-2.5 shrink-0">
-            <div className="app-theme-pill flex items-center gap-1.5 border-[1.5px] border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] rounded-lg px-2.5 py-1.5 min-w-0">
+          {/* Zone 3: Theme Selector + Voice Shortcut + Primary Action */}
+          <div className="w-full sm:w-auto flex items-center justify-between sm:justify-end gap-2 shrink-0">
+            <div className="app-theme-pill flex items-center gap-1.5 border-[1.5px] border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] rounded-lg px-2.5 py-1.5 min-w-0 flex-1 sm:flex-initial overflow-hidden">
               <Palette
                 className="w-3.5 h-3.5 text-[var(--accent-gold)] shrink-0"
                 aria-hidden="true"
@@ -145,7 +148,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
                 aria-label="Selecionar tema de cores"
                 value={theme}
                 onChange={(e) => onChangeTheme(e.target.value as ThemeId)}
-                className="bg-transparent text-xs font-semibold text-[var(--text-primary)] focus:outline-none cursor-pointer max-w-[175px] sm:max-w-none truncate"
+                className="bg-transparent text-xs font-semibold text-[var(--text-primary)] focus:outline-none cursor-pointer w-full min-w-0 sm:w-auto truncate"
               >
                 {THEME_OPTIONS.map((opt) => (
                   <option key={opt.id} value={opt.id}>
@@ -155,10 +158,23 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
               </select>
             </div>
 
+            {onOpenVoiceTransaction && (
+              <button
+                type="button"
+                onClick={onOpenVoiceTransaction}
+                aria-label="Lançamento por voz"
+                title="Lançamento por voz"
+                className="inline-flex items-center justify-center p-2 sm:px-3 sm:py-2 rounded-lg border-[1.5px] border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] hover:opacity-90 text-[var(--text-primary)] text-xs sm:text-sm font-semibold transition-opacity shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-underline)]"
+              >
+                <Mic className="w-4 h-4 text-[var(--accent-gold)] shrink-0" aria-hidden="true" />
+                <span className="hidden xl:inline ml-1.5">Voz</span>
+              </button>
+            )}
+
             <button
               type="button"
               onClick={onOpenNewTransaction}
-              className="inline-flex items-center justify-center gap-1.5 px-3.5 sm:px-4 py-2 rounded-lg bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-[var(--accent-primary-text)] text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-underline)]"
+              className="inline-flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-[var(--accent-primary-text)] text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-underline)]"
             >
               <Plus className="w-4 h-4 shrink-0" aria-hidden="true" />
               <span>Novo Lançamento</span>

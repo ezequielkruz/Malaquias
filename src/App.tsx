@@ -48,6 +48,7 @@ export default function App() {
   const [theme, setTheme] = useState<ThemeId>(() => loadTheme());
   const [activeTab, setActiveTab] = useState<TabId>('resumo');
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
+  const [autoStartVoice, setAutoStartVoice] = useState(false);
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [notice, setNotice] = useState<NoticeBanner | null>(null);
 
@@ -475,7 +476,14 @@ export default function App() {
       <HeaderNav
         activeTab={activeTab}
         onSelectTab={setActiveTab}
-        onOpenNewTransaction={() => setIsTxModalOpen(true)}
+        onOpenNewTransaction={() => {
+          setAutoStartVoice(false);
+          setIsTxModalOpen(true);
+        }}
+        onOpenVoiceTransaction={() => {
+          setAutoStartVoice(true);
+          setIsTxModalOpen(true);
+        }}
         activeAno={store.activeAno}
         activeMes={store.activeMes}
         availableYears={availableYears}
@@ -604,6 +612,7 @@ export default function App() {
 
       <TransactionModal
         isOpen={isTxModalOpen}
+        autoStartVoice={autoStartVoice}
         activeAno={store.activeAno}
         activeMes={store.activeMes}
         categories={store.categorias}
@@ -611,7 +620,10 @@ export default function App() {
         formasPagamento={store.formasPagamento}
         cartoes={store.cartoes || []}
         onAddCreditCard={handleAddCreditCard}
-        onClose={() => setIsTxModalOpen(false)}
+        onClose={() => {
+          setIsTxModalOpen(false);
+          setAutoStartVoice(false);
+        }}
         onSave={handleSaveTransaction}
         onSaveBatch={handleSaveTransactionsBatch}
       />
