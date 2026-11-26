@@ -25,6 +25,27 @@ export default defineConfig(() => {
           if (fs.existsSync(distDir) && fs.existsSync(srcAssets)) {
             fs.cpSync(srcAssets, distAssets, {recursive: true, force: true});
           }
+
+          // Garante que dist/sw.js pré-carregue todos os bundles JS/CSS gerados em dist/assets/
+          const swPath = path.resolve(distDir, 'sw.js');
+          const builtAssetsDir = path.resolve(distDir, 'assets');
+          if (fs.existsSync(swPath) && fs.existsSync(builtAssetsDir)) {
+            const assetUrls = fs
+              .readdirSync(builtAssetsDir)
+              .filter((file) => /\.(js|css|woff2?|png|svg)$/i.test(file))
+              .map((file) => `/assets/${file}`);
+            const buildStamp = Date.now().toString(36);
+            let swContent = fs.readFileSync(swPath, 'utf-8');
+            swContent = swContent.replace(
+              /const CACHE_NAME = ['"][^'"]+['"];/,
+              `const CACHE_NAME = 'gestor-financeiro-v3-10-${buildStamp}';`,
+            );
+            swContent = swContent.replace(
+              'const BUILD_ASSETS = [];',
+              `const BUILD_ASSETS = ${JSON.stringify(assetUrls)};`,
+            );
+            fs.writeFileSync(swPath, swContent, 'utf-8');
+          }
         },
       },
     ],
