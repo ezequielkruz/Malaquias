@@ -763,7 +763,7 @@ export const ControleTab: React.FC<ControleTabProps> = ({
       {/* DESKTOP SPREADSHEET TABLE (>= 768px) */}
       <div className="hidden md:block rounded-xl border-[1.5px] border-[var(--border-subtle)] bg-[var(--bg-surface)] [box-shadow:var(--card-shadow)]">
         <div className="overflow-auto max-h-[68vh] rounded-t-[10px]">
-          <table className="w-full text-left border-collapse min-w-[1060px]">
+          <table className="honey-table w-full text-left border-collapse min-w-[1060px]">
             <thead>
               <tr className="text-xs font-semibold text-[var(--text-secondary)]">
                 <th className="py-3 px-3 w-32 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)]">Data</th>

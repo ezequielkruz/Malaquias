@@ -15,6 +15,7 @@ import {
   computeDashboardSummary,
 } from '../utils/calculations';
 import { formatBRL, formatPeriodLabel, MONTH_ABBR } from '../utils/format';
+import type { ThemeId } from '../utils/theme';
 
 interface DashboardTabProps {
   ano: number;
@@ -23,6 +24,7 @@ interface DashboardTabProps {
   banks: BankAccount[];
   periods: Record<string, PeriodSnapshot>;
   titulares: string[];
+  theme?: ThemeId;
   onOpenNewTransaction: () => void;
   onNavigateToBancos: () => void;
 }
@@ -42,6 +44,84 @@ const CHART_PALETTE = [
   '#A855F7', // Violet
 ];
 
+const HONEY_OPAL_CHART_PALETTE = [
+  '#ECB914', // Ouro Mostarda Vibrante
+  '#9D8108', // Oliva Dourado Profundo
+  '#4F3D35', // Marrom Espresso
+  '#CBB8A0', // Taupe Quente
+  '#F6D579', // Amarelo Mel Suave
+  '#B86B2B', // Âmbar Terracota
+  '#6E5A4F', // Taupe Café
+  '#D49B1A', // Mel Queimado
+  '#5A6B47', // Oliva Musgo
+  '#8F5D46', // Canela Escuro
+];
+
+const SAPPHIRE_NIGHTFALL_CHART_PALETTE = [
+  '#0474C4', // Azul Safira Vibrante
+  '#06457F', // Azul Marinho Profundo
+  '#5379AE', // Azul Ardósia Suave
+  '#2C4444', // Azul-Petróleo Escuro
+  '#A8C4EC', // Azul Gelo Claro
+  '#262B40', // Azul Noturno Profundo
+  '#0E8FA3', // Turquesa Profundo
+  '#3B6598', // Cobalto Médio
+  '#7BA3D6', // Safira Suave
+  '#1D4E78', // Marinho Médio
+];
+
+const AMETHYST_DAWN_CHART_PALETTE = [
+  '#341C67', // Roxo Ametista Profundo
+  '#DCCE40', // Amarelo Elétrico / Lima-Ouro
+  '#472F5B', // Berinjela / Ameixa Escura
+  '#C4AEF4', // Lavanda Clara / Ametista Suave
+  '#CCA4B4', // Rosé / Malva Suave
+  '#6B47B8', // Ametista Médio
+  '#9F6A86', // Malva Profundo
+  '#B5A626', // Lima-Ouro Profundo
+  '#8567C4', // Lavanda Intensa
+  '#5E3C75', // Ameixa Média
+];
+
+const AMETHYST_MINT_CHART_PALETTE = [
+  '#562F54', // Roxo-Ameixa Escuro
+  '#2A3F38', // Verde-Petróleo Escuro
+  '#8DF688', // Verde-Menta Vibrante
+  '#F650BD', // Rosa-Neon / Magenta Vibrante
+  '#57585D', // Cinza-Chumbo Médio
+  '#764373', // Ameixa Média
+  '#3E5D52', // Petróleo Médio
+  '#5FD65A', // Menta Profundo
+  '#D4359D', // Magenta Médio
+  '#7B7C82', // Chumbo Suave
+];
+
+const FESTIVE_EVE_CHART_PALETTE = [
+  '#24AEFF', // Azul Céu / Ciano Vibrante
+  '#C04AFF', // Lilás / Roxo-Orquídea Brilhante
+  '#7E3DFF', // Roxo-Violeta Intenso
+  '#2323FF', // Azul Elétrico / Cobalto Intenso
+  '#A5DCFF', // Azul Claro Luminoso
+  '#DF9CFF', // Orquídea Suave
+  '#5E7BFF', // Cobalto Claro
+  '#38C6FF', // Ciano Brilhante
+  '#9B6BFF', // Violeta Suave
+  '#E4B5FF', // Lilás Pastel Luminoso
+];
+
+const CORONA_DARK_CHART_PALETTE = [
+  '#198754', // Verde Esmeralda / Positivo
+  '#FFC107', // Âmbar / Ouro
+  '#0D6EFD', // Azul Royal
+  '#AF1763', // Magenta / Vinho Vibrante
+  '#0DCAF0', // Ciano / Azul Claro
+  '#AB2E3C', // Vermelho / Alerta
+  '#25B874', // Esmeralda Claro
+  '#3B82F6', // Royal Claro
+  '#DF3A89', // Magenta Claro
+  '#FFD24C', // Âmbar Claro
+];
+
 export const DashboardTab: React.FC<DashboardTabProps> = ({
   ano,
   mes,
@@ -49,6 +129,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   banks,
   periods,
   titulares,
+  theme,
   onOpenNewTransaction,
   onNavigateToBancos,
 }) => {
@@ -67,6 +148,21 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
   );
 
   // Build SVG Donut arcs
+  const activePalette =
+    theme === 'vibrant-gold-green-blue'
+      ? HONEY_OPAL_CHART_PALETTE
+      : theme === 'clean-light'
+        ? SAPPHIRE_NIGHTFALL_CHART_PALETTE
+        : theme === 'electric-contrast-light'
+          ? AMETHYST_DAWN_CHART_PALETTE
+          : theme === 'executive-vibrant-light'
+            ? AMETHYST_MINT_CHART_PALETTE
+            : theme === 'festive-eve'
+              ? FESTIVE_EVE_CHART_PALETTE
+              : theme === 'corona-dark'
+                ? CORONA_DARK_CHART_PALETTE
+                : CHART_PALETTE;
+
   const donutSlices = useMemo(() => {
     const items = summary.despesasPorCategoria;
     if (items.length === 0) return [];
@@ -80,12 +176,12 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       cumulativePercent += item.percentual;
       return {
         ...item,
-        color: CHART_PALETTE[idx % CHART_PALETTE.length],
+        color: activePalette[idx % activePalette.length],
         dashArray: `${Math.max(dashLength - 2, 1)} ${circumference}`,
         dashOffset,
       };
     });
-  }, [summary.despesasPorCategoria]);
+  }, [summary.despesasPorCategoria, activePalette]);
 
   const activeSlice =
     donutSlices.find((s) => s.categoria === hoveredCat) || donutSlices[0] || null;
@@ -139,7 +235,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
       {/* Top KPI Grid (5 Cards) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="rounded-xl border-[1.5px] border-[var(--card-income-border)] bg-[var(--card-income-bg)] [box-shadow:var(--card-shadow)] p-5">
+        <div className="honey-kpi-card honey-kpi-income rounded-xl border-[1.5px] border-[var(--card-income-border)] bg-[var(--card-income-bg)] [box-shadow:var(--card-shadow)] p-5">
           <div className="flex items-center justify-between text-xs font-semibold text-[var(--semantic-income)]">
             <span>Total Receitas</span>
             <ArrowUpRight className="w-4 h-4 text-[var(--semantic-income)]" aria-hidden="true" />
@@ -150,7 +246,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Entradas no período</p>
         </div>
 
-        <div className="rounded-xl border-[1.5px] border-[var(--card-expense-border)] bg-[var(--card-expense-bg)] [box-shadow:var(--card-shadow)] p-5">
+        <div className="honey-kpi-card honey-kpi-expense rounded-xl border-[1.5px] border-[var(--card-expense-border)] bg-[var(--card-expense-bg)] [box-shadow:var(--card-shadow)] p-5">
           <div className="flex items-center justify-between text-xs font-semibold text-[var(--semantic-expense)]">
             <span>Total Despesas</span>
             <ArrowDownRight className="w-4 h-4 text-[var(--semantic-expense)]" aria-hidden="true" />
@@ -161,7 +257,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           <p className="mt-1 text-xs font-medium text-[var(--text-secondary)]">Saídas no período</p>
         </div>
 
-        <div className="rounded-xl border-[1.5px] border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] [box-shadow:var(--card-shadow)] p-5">
+        <div className="honey-kpi-card honey-kpi-gold rounded-xl border-[1.5px] border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] [box-shadow:var(--card-shadow)] p-5">
           <div className="flex items-center justify-between text-xs font-semibold text-[var(--accent-gold)]">
             <span>Saldo do Mês</span>
             <Wallet className="w-4 h-4 text-[var(--accent-gold)]" aria-hidden="true" />
@@ -180,7 +276,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           </p>
         </div>
 
-        <div className="rounded-xl border-[1.5px] border-[var(--card-cyan-border)] bg-[var(--card-cyan-bg)] [box-shadow:var(--card-shadow)] p-5">
+        <div className="honey-kpi-card honey-kpi-methods rounded-xl border-[1.5px] border-[var(--card-cyan-border)] bg-[var(--card-cyan-bg)] [box-shadow:var(--card-shadow)] p-5">
           <div className="text-xs font-semibold text-[var(--accent-blue)]">
             Por Meio de Pagamento
           </div>
@@ -206,7 +302,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           </div>
         </div>
 
-        <div className="rounded-xl border-[1.5px] border-[var(--card-blue-border)] bg-[var(--card-blue-bg)] [box-shadow:var(--card-shadow)] p-5">
+        <div className="honey-kpi-card honey-kpi-invest rounded-xl border-[1.5px] border-[var(--card-blue-border)] bg-[var(--card-blue-bg)] [box-shadow:var(--card-shadow)] p-5">
           <div className="flex items-center justify-between text-xs font-semibold text-[var(--accent-blue)]">
             <span>Patrimônio Investido</span>
             <Landmark className="w-4 h-4 text-[var(--accent-blue)]" aria-hidden="true" />
@@ -228,7 +324,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div
           data-testid="card-saldo-acumulado"
-          className="rounded-xl border-[1.5px] border-[var(--card-blue-border)] bg-[var(--card-blue-bg)] [box-shadow:var(--card-shadow)] p-5 flex flex-col justify-between gap-2"
+          className="honey-kpi-card honey-kpi-cumulative rounded-xl border-[1.5px] border-[var(--card-blue-border)] bg-[var(--card-blue-bg)] [box-shadow:var(--card-shadow)] p-5 flex flex-col justify-between gap-2"
         >
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-semibold text-[var(--accent-blue)]">
@@ -264,7 +360,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
         <div
           data-testid="card-despesas-futuras"
-          className="rounded-xl border-[1.5px] border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] [box-shadow:var(--card-shadow)] p-5 flex flex-col justify-between gap-2"
+          className="honey-kpi-card honey-kpi-future rounded-xl border-[1.5px] border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] [box-shadow:var(--card-shadow)] p-5 flex flex-col justify-between gap-2"
         >
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-xs font-semibold text-[var(--accent-gold)]">
@@ -332,7 +428,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
           {/* Donut Chart: Despesas por Categoria */}
-          <div className="lg:col-span-7 rounded-xl border-[1.5px] border-[var(--border-subtle)] bg-[var(--bg-surface)] [box-shadow:var(--card-shadow)] p-5 sm:p-6 flex flex-col justify-between">
+          <div className="honey-panel lg:col-span-7 rounded-xl border-[1.5px] border-[var(--border-subtle)] bg-[var(--bg-surface)] [box-shadow:var(--card-shadow)] p-5 sm:p-6 flex flex-col justify-between">
             <div className="flex items-center justify-between gap-4 mb-5">
               <div>
                 <h2 className="font-display text-base font-bold text-[var(--text-primary)]">
@@ -451,7 +547,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
           </div>
 
           {/* Bar Chart: Receitas vs Despesas */}
-          <div className="lg:col-span-5 rounded-xl border-[1.5px] border-[var(--card-blue-border)] bg-[var(--bg-surface)] [box-shadow:var(--card-shadow)] p-5 sm:p-6 flex flex-col justify-between">
+          <div className="honey-panel lg:col-span-5 rounded-xl border-[1.5px] border-[var(--card-blue-border)] bg-[var(--bg-surface)] [box-shadow:var(--card-shadow)] p-5 sm:p-6 flex flex-col justify-between">
             <div>
               <h2 className="font-display text-base font-semibold text-[var(--text-primary)]">
                 Receitas vs. Despesas
@@ -469,7 +565,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 </span>
                 <div className="w-14 sm:w-16 bg-[var(--chart-track)] rounded-t-md h-36 flex items-end overflow-hidden border-[1.5px] border-[var(--card-income-border)]">
                   <div
-                    className="w-full bg-[var(--semantic-income)] transition-all duration-300"
+                    className="theme-bar-income w-full bg-[var(--semantic-income)] transition-all duration-300"
                     style={{ height: `${Math.max(receitaHeightPct, summary.totalReceitas > 0 ? 4 : 0)}%` }}
                   />
                 </div>
@@ -483,7 +579,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                 </span>
                 <div className="w-14 sm:w-16 bg-[var(--chart-track)] rounded-t-md h-36 flex items-end overflow-hidden border-[1.5px] border-[var(--card-expense-border)]">
                   <div
-                    className="w-full bg-[var(--semantic-expense)] transition-all duration-300"
+                    className="theme-bar-expense w-full bg-[var(--semantic-expense)] transition-all duration-300"
                     style={{ height: `${Math.max(despesaHeightPct, summary.totalDespesas > 0 ? 4 : 0)}%` }}
                   />
                 </div>
@@ -506,7 +602,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       {/* Complementary Block: Evolução & Projeção (Saldo Acumulado & Compromissos Futuros) */}
       <div
         data-testid="dashboard-evolution-projection"
-        className="rounded-xl border-[1.5px] border-[var(--border-subtle)] bg-[var(--bg-surface)] [box-shadow:var(--card-shadow)] p-5 sm:p-6 space-y-5"
+        className="honey-panel rounded-xl border-[1.5px] border-[var(--border-subtle)] bg-[var(--bg-surface)] [box-shadow:var(--card-shadow)] p-5 sm:p-6 space-y-5"
       >
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-start gap-2.5">
@@ -778,7 +874,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
 
         {/* Compact Multi-Period Breakdown Table */}
         <div className="overflow-x-auto rounded-lg border border-[var(--border-subtle)]">
-          <table className="w-full text-left border-collapse min-w-[560px]">
+          <table className="honey-table w-full text-left border-collapse min-w-[560px]">
             <thead>
               <tr className="bg-[var(--bg-header)] text-xs font-semibold text-[var(--text-secondary)]">
                 <th className="py-2.5 px-3 border-b border-[var(--border-subtle)]">Período</th>
@@ -795,7 +891,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
                   key={pt.periodoKey}
                   className={
                     pt.status === 'atual'
-                      ? 'bg-[var(--card-gold-bg)] font-semibold'
+                      ? 'honey-current-row bg-[var(--card-gold-bg)] font-semibold'
                       : 'hover:bg-[var(--bg-surface-hover)]'
                   }
                 >

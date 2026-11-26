@@ -3,7 +3,13 @@ export type ThemeId =
   | 'gold-light'
   | 'clean-light'
   | 'gold-dark'
-  | 'midnight';
+  | 'midnight'
+  | 'executive-vibrant-light'
+  | 'executive-vibrant-dark'
+  | 'electric-contrast-light'
+  | 'night-gold-dark'
+  | 'festive-eve'
+  | 'corona-dark';
 
 export interface ThemeOption {
   id: ThemeId;
@@ -15,9 +21,9 @@ export interface ThemeOption {
 export const THEME_OPTIONS: ThemeOption[] = [
   {
     id: 'vibrant-gold-green-blue',
-    label: 'Vibrante Ouro, Verde & Azul',
+    label: 'Honey Opal Sunset',
     isDark: false,
-    swatchColor: '#D97706',
+    swatchColor: '#ECB914',
   },
   {
     id: 'gold-light',
@@ -27,9 +33,9 @@ export const THEME_OPTIONS: ThemeOption[] = [
   },
   {
     id: 'clean-light',
-    label: 'Claro Clássico (Clean Light)',
+    label: 'Sapphire Nightfall Whisper',
     isDark: false,
-    swatchColor: '#2563EB',
+    swatchColor: '#0474C4',
   },
   {
     id: 'gold-dark',
@@ -43,6 +49,42 @@ export const THEME_OPTIONS: ThemeOption[] = [
     isDark: true,
     swatchColor: '#10B981',
   },
+  {
+    id: 'executive-vibrant-light',
+    label: 'Amethyst Mint Harmony',
+    isDark: false,
+    swatchColor: '#8DF688',
+  },
+  {
+    id: 'executive-vibrant-dark',
+    label: 'Executivo Vibrante (Escuro)',
+    isDark: true,
+    swatchColor: '#FBBF24',
+  },
+  {
+    id: 'electric-contrast-light',
+    label: 'Amethyst Dawn Haze',
+    isDark: false,
+    swatchColor: '#DCCE40',
+  },
+  {
+    id: 'night-gold-dark',
+    label: 'Noite & Ouro (Escuro)',
+    isDark: true,
+    swatchColor: '#D97706',
+  },
+  {
+    id: 'festive-eve',
+    label: 'Festive Eve',
+    isDark: true,
+    swatchColor: '#C04AFF',
+  },
+  {
+    id: 'corona-dark',
+    label: 'Corona Dark',
+    isDark: true,
+    swatchColor: '#AF1763',
+  },
 ];
 
 const THEME_STORAGE_KEY = 'gestor_financeiro_theme';
@@ -53,7 +95,13 @@ export function isValidThemeId(val: unknown): val is ThemeId {
     val === 'gold-light' ||
     val === 'clean-light' ||
     val === 'gold-dark' ||
-    val === 'midnight'
+    val === 'midnight' ||
+    val === 'executive-vibrant-light' ||
+    val === 'executive-vibrant-dark' ||
+    val === 'electric-contrast-light' ||
+    val === 'night-gold-dark' ||
+    val === 'festive-eve' ||
+    val === 'corona-dark'
   );
 }
 

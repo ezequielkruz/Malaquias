@@ -86,15 +86,15 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
 
   return (
     <>
-      <header className="border-b border-[var(--border-subtle)] bg-[var(--bg-header)] transition-colors">
+      <header className="app-top-header border-b border-[var(--border-subtle)] bg-[var(--bg-header)] transition-colors">
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-3 lg:py-0 lg:h-16 flex flex-wrap lg:flex-nowrap items-center justify-between gap-3 lg:gap-6">
           {/* Zone 1: Brand Title */}
           <div className="flex items-center gap-2.5 whitespace-nowrap shrink-0">
             <span
               aria-hidden="true"
-              className="w-2.5 h-2.5 rounded-sm bg-[var(--accent-gold)] ring-2 ring-[var(--accent-blue)]/30"
+              className="app-brand-dot w-2.5 h-2.5 rounded-sm bg-[var(--accent-gold)] ring-2 ring-[var(--accent-blue)]/30"
             />
-            <span className="font-display text-base sm:text-lg font-bold tracking-tight text-[var(--text-primary)]">
+            <span className="app-brand-title font-display text-base sm:text-lg font-bold tracking-tight text-[var(--text-primary)]">
               Gestor Financeiro 3.10
             </span>
           </div>
@@ -132,7 +132,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
 
           {/* Zone 3: Theme Selector + Primary Action */}
           <div className="w-full sm:w-auto flex flex-wrap items-center justify-between sm:justify-end gap-2.5 shrink-0">
-            <div className="flex items-center gap-1.5 border-[1.5px] border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] rounded-lg px-2.5 py-1.5 min-w-0">
+            <div className="app-theme-pill flex items-center gap-1.5 border-[1.5px] border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] rounded-lg px-2.5 py-1.5 min-w-0">
               <Palette
                 className="w-3.5 h-3.5 text-[var(--accent-gold)] shrink-0"
                 aria-hidden="true"
@@ -169,7 +169,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
         {/* Mobile/Tablet Touch-Friendly Icon + Label Grid Navigation (min 48px touch target, zero accidental cutoffs) */}
         <nav
           aria-label="Navegação móvel"
-          className="lg:hidden border-t border-[var(--border-subtle)] bg-[var(--bg-canvas)]/55 px-2.5 sm:px-6 py-2"
+          className="app-mobile-nav lg:hidden border-t border-[var(--border-subtle)] bg-[var(--bg-canvas)]/55 px-2.5 sm:px-6 py-2"
         >
           <div className="grid grid-cols-5 gap-1.5 sm:gap-2.5">
             {TABS.map((tab) => {
@@ -182,7 +182,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
                   onClick={() => onSelectTab(tab.id)}
                   aria-label={tab.label}
                   aria-current={isActive ? 'page' : undefined}
-                  className={`relative min-h-[52px] sm:min-h-[46px] px-1 sm:px-2.5 py-1.5 rounded-lg border-[1.5px] flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 text-center transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-underline)] ${
+                  className={`app-mobile-tab relative min-h-[52px] sm:min-h-[46px] px-1 sm:px-2.5 py-1.5 rounded-lg border-[1.5px] flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 text-center transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-underline)] ${
                     isActive
                       ? 'border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] text-[var(--text-primary)] font-bold [box-shadow:var(--card-shadow)]'
                       : 'border-[var(--border-subtle)] bg-[var(--bg-surface)] text-[var(--text-secondary)] font-medium hover:bg-[var(--bg-surface-hover)]'
@@ -212,7 +212,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
       </header>
 
       {/* Workspace Period & JSON Portability Bar */}
-      <div className="border-b border-[var(--border-subtle)] bg-[var(--bg-canvas)] transition-colors">
+      <div className="app-period-bar border-b border-[var(--border-subtle)] bg-[var(--bg-canvas)] transition-colors">
         <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
           {/* Active Period Controls */}
           <div className="flex items-center justify-between sm:justify-start gap-3">

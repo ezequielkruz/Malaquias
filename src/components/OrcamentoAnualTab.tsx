@@ -212,7 +212,7 @@ export const OrcamentoAnualTab: React.FC<OrcamentoAnualTabProps> = ({
           <span className="text-[var(--accent-blue)] font-semibold">Deslize JAN–DEZ →</span>
         </div>
         <div className="overflow-auto max-h-[68vh] sm:max-h-[72vh] rounded-b-[10px] sm:rounded-[10px]">
-          <table className="w-full text-left border-collapse min-w-[1140px]">
+          <table className="honey-table w-full text-left border-collapse min-w-[1140px]">
             <thead>
               <tr className="text-xs font-semibold text-[var(--text-secondary)]">
                 <th className="py-3 px-3 sm:px-4 sticky top-0 left-0 z-30 bg-[var(--bg-header)] border-b border-r border-[var(--border-subtle)] w-40 min-w-[160px] sm:w-64 sm:min-w-[240px]">
@@ -233,7 +233,7 @@ export const OrcamentoAnualTab: React.FC<OrcamentoAnualTabProps> = ({
             </thead>
             <tbody className="divide-y divide-[var(--border-subtle)] text-xs sm:text-sm">
               {/* FONTES DE RECEITA Header */}
-              <tr className="bg-[var(--pivot-income-bg)]">
+              <tr className="honey-pivot-row bg-[var(--pivot-income-bg)]">
                 <td className="py-2.5 px-3 sm:px-4 sticky left-0 z-10 bg-[var(--pivot-income-bg)] border-r border-[var(--border-subtle)] font-semibold text-[var(--semantic-income)]">
                   <button
                     type="button"
@@ -346,7 +346,7 @@ export const OrcamentoAnualTab: React.FC<OrcamentoAnualTabProps> = ({
                 })}
 
               {/* DESPESAS Header */}
-              <tr className="bg-[var(--pivot-expense-bg)]">
+              <tr className="honey-pivot-row bg-[var(--pivot-expense-bg)]">
                 <td className="py-2.5 px-3 sm:px-4 sticky left-0 z-10 bg-[var(--pivot-expense-bg)] border-r border-[var(--border-subtle)] font-semibold text-[var(--semantic-expense)]">
                   DESPESAS (CONSOLIDADO)
                 </td>
@@ -444,7 +444,7 @@ export const OrcamentoAnualTab: React.FC<OrcamentoAnualTabProps> = ({
               })}
 
               {/* SALDO ANUAL Row */}
-              <tr className="bg-[var(--bg-header)] border-t-2 border-[var(--border-strong)]">
+              <tr className="honey-pivot-row bg-[var(--bg-header)] border-t-2 border-[var(--border-strong)]">
                 <td className="py-3 px-3 sm:px-4 sticky left-0 z-10 bg-[var(--bg-header)] border-r border-[var(--border-subtle)] font-display font-bold text-[var(--text-primary)]">
                   SALDO MENSAL / ANUAL
                 </td>

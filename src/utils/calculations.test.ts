@@ -33,7 +33,7 @@ import {
   DEFAULT_PAYMENT_METHODS,
   DEFAULT_TITULARES,
 } from '../data/defaults';
-import { isValidThemeId } from './theme';
+import { isValidThemeId, THEME_OPTIONS } from './theme';
 import type { BankAccount, FinanceStore, Transaction } from '../types/finance';
 
 function createSampleTestStore(): FinanceStore {
@@ -764,6 +764,32 @@ test('computeCumulativeAndFutureOverview computes accumulated balance and future
   assert.equal(novEzequiel.saldoMesAtual, 1000);
   assert.equal(novEzequiel.saldoAcumuladoAtePeriodo, 3000);
 });
+
+test('THEME_OPTIONS preserves the 5 existing themes and includes all new vibrant themes', () => {
+  assert.equal(THEME_OPTIONS.length, 11);
+  const expectedLabels = [
+    'Honey Opal Sunset',
+    'Claro Dourado (Gold Light)',
+    'Sapphire Nightfall Whisper',
+    'Escuro Dourado (Gold Dark)',
+    'Escuro Oceano (Midnight)',
+    'Amethyst Mint Harmony',
+    'Executivo Vibrante (Escuro)',
+    'Amethyst Dawn Haze',
+    'Noite & Ouro (Escuro)',
+    'Festive Eve',
+    'Corona Dark',
+  ];
+  assert.deepEqual(
+    THEME_OPTIONS.map((t) => t.label),
+    expectedLabels,
+  );
+  for (const opt of THEME_OPTIONS) {
+    assert.equal(isValidThemeId(opt.id), true);
+  }
+  assert.equal(isValidThemeId('unknown-theme'), false);
+});
+
 
 
 
