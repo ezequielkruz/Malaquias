@@ -17,6 +17,7 @@ import {
 import type { TabId } from '../types/finance';
 import { MONTH_ABBR } from '../utils/format';
 import { THEME_OPTIONS, type ThemeId } from '../utils/theme';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface HeaderNavProps {
   activeTab: TabId;
@@ -90,14 +91,14 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   return (
     <>
       <header className="app-top-header border-b border-[var(--border-subtle)] bg-[var(--bg-header)] transition-colors">
-        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-3 lg:py-0 lg:h-16 flex flex-wrap lg:flex-nowrap items-center justify-between gap-3 lg:gap-6">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 py-3 lg:py-0 lg:h-16 flex flex-wrap lg:flex-nowrap items-center justify-between gap-3 lg:gap-4">
           {/* Zone 1: Brand Title */}
-          <div className="flex items-center gap-2.5 whitespace-nowrap shrink-0">
+          <div className="flex items-center gap-2 whitespace-nowrap shrink-0">
             <span
               aria-hidden="true"
               className="app-brand-dot w-2.5 h-2.5 rounded-sm bg-[var(--accent-gold)] ring-2 ring-[var(--accent-blue)]/30"
             />
-            <span className="app-brand-title font-display text-base sm:text-lg font-bold tracking-tight text-[var(--text-primary)]">
+            <span className="app-brand-title font-display text-base lg:text-[15px] xl:text-base font-bold tracking-tight text-[var(--text-primary)]">
               Gestor Financeiro 3.10
             </span>
           </div>
@@ -105,7 +106,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
           {/* Zone 2: Primary Tabs (Desktop) */}
           <nav
             aria-label="Navegação principal"
-            className="hidden lg:flex items-center gap-5 xl:gap-6"
+            className="hidden lg:flex items-center gap-3 xl:gap-4 2xl:gap-5"
           >
             {TABS.map((tab) => {
               const isActive = activeTab === tab.id;
@@ -115,7 +116,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
                   type="button"
                   onClick={() => onSelectTab(tab.id)}
                   aria-current={isActive ? 'page' : undefined}
-                  className={`relative py-5 text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none ${
+                  className={`relative py-5 text-xs xl:text-[13px] 2xl:text-sm font-medium transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none ${
                     isActive
                       ? 'text-[var(--text-primary)] font-semibold'
                       : 'text-[var(--text-muted)] hover:text-[var(--accent-blue)]'
@@ -133,9 +134,9 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
             })}
           </nav>
 
-          {/* Zone 3: Theme Selector + Voice Shortcut + Primary Action */}
-          <div className="w-full sm:w-auto flex items-center justify-between sm:justify-end gap-2 shrink-0">
-            <div className="app-theme-pill flex items-center gap-1.5 border-[1.5px] border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] rounded-lg px-2.5 py-1.5 min-w-0 flex-1 sm:flex-initial overflow-hidden">
+          {/* Zone 3: Theme Selector + PWA Install + Voice Shortcut + Primary Action */}
+          <div className="w-full sm:w-auto flex items-center justify-between sm:justify-end gap-1.5 sm:gap-2 shrink-0">
+            <div className="app-theme-pill flex items-center gap-1.5 border-[1.5px] border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] rounded-lg px-2 sm:px-2.5 py-1.5 min-w-0 flex-1 sm:flex-initial sm:max-w-[155px] 2xl:max-w-[185px] overflow-hidden">
               <Palette
                 className="w-3.5 h-3.5 text-[var(--accent-gold)] shrink-0"
                 aria-hidden="true"
@@ -148,7 +149,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
                 aria-label="Selecionar tema de cores"
                 value={theme}
                 onChange={(e) => onChangeTheme(e.target.value as ThemeId)}
-                className="bg-transparent text-xs font-semibold text-[var(--text-primary)] focus:outline-none cursor-pointer w-full min-w-0 sm:w-auto truncate"
+                className="bg-transparent text-xs font-semibold text-[var(--text-primary)] focus:outline-none cursor-pointer w-full min-w-0 truncate"
               >
                 {THEME_OPTIONS.map((opt) => (
                   <option key={opt.id} value={opt.id}>
@@ -158,23 +159,25 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
               </select>
             </div>
 
+            <PWAInstallButton />
+
             {onOpenVoiceTransaction && (
               <button
                 type="button"
                 onClick={onOpenVoiceTransaction}
                 aria-label="Lançamento por voz"
                 title="Lançamento por voz"
-                className="inline-flex items-center justify-center p-2 sm:px-3 sm:py-2 rounded-lg border-[1.5px] border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] hover:opacity-90 text-[var(--text-primary)] text-xs sm:text-sm font-semibold transition-opacity shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-underline)]"
+                className="inline-flex items-center justify-center p-2 2xl:px-3 2xl:py-2 rounded-lg border-[1.5px] border-[var(--card-gold-border)] bg-[var(--card-gold-bg)] hover:opacity-90 text-[var(--text-primary)] text-xs sm:text-sm font-semibold transition-opacity shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-underline)]"
               >
                 <Mic className="w-4 h-4 text-[var(--accent-gold)] shrink-0" aria-hidden="true" />
-                <span className="hidden xl:inline ml-1.5">Voz</span>
+                <span className="hidden 2xl:inline ml-1.5">Voz</span>
               </button>
             )}
 
             <button
               type="button"
               onClick={onOpenNewTransaction}
-              className="inline-flex items-center justify-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-[var(--accent-primary-text)] text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-underline)]"
+              className="inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-[var(--accent-primary-text)] text-xs sm:text-sm font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--accent-underline)]"
             >
               <Plus className="w-4 h-4 shrink-0" aria-hidden="true" />
               <span>Novo Lançamento</span>

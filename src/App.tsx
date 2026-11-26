@@ -39,6 +39,7 @@ import { OrcamentoAnualTab } from './components/OrcamentoAnualTab';
 import { CategoriasTab } from './components/CategoriasTab';
 import { TransactionModal } from './components/TransactionModal';
 import { ResetDataModal } from './components/ResetDataModal';
+import { OfflineIndicator } from './components/OfflineIndicator';
 
 interface NoticeBanner {
   kind: 'success' | 'error';
@@ -597,6 +598,8 @@ export default function App() {
         onClearTransactions={handleClearTransactions}
         onResetFreshStart={handleResetFreshStart}
       />
+
+      <OfflineIndicator />
     </div>
   );
 }
