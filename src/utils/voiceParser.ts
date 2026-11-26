@@ -34,6 +34,16 @@ export function normalizeSpeechText(input: string): string {
     .trim();
 }
 
+export function mergeSpeechSegments(
+  basePhrase: string,
+  ...extraSegments: string[]
+): string {
+  return [basePhrase, ...extraSegments]
+    .map((segment) => segment.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join(' ');
+}
+
 const PT_UNITS: Record<string, number> = {
   zero: 0,
   um: 1,

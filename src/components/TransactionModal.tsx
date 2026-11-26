@@ -30,6 +30,7 @@ import {
   parseBRDate,
 } from '../utils/format';
 import {
+  mergeSpeechSegments,
   parseVoiceTransaction,
   type ParsedVoiceTransaction,
 } from '../utils/voiceParser';
@@ -147,24 +148,44 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
   const prevOpenRef = useRef(false);
   const recognitionRef = useRef<SpeechRecognitionInstanceLike | null>(null);
   const manualPhraseInputRef = useRef<HTMLInputElement | null>(null);
+  const shouldKeepListeningRef = useRef(false);
+  const restartTimerRef = useRef<number | null>(null);
+  const basePhraseRef = useRef('');
+  const sessionFinalRef = useRef('');
+  const interimRef = useRef('');
+  const manualPhraseRef = useRef('');
 
   const filteredCategories = categories.filter((c) => c.tipo === tipo);
   const selectedCatObj =
     filteredCategories.find((c) => c.nome === categoria) || filteredCategories[0];
   const subcategories = selectedCatObj?.subcategorias || ['Outros'];
 
-  const stopVoiceRecognition = useCallback(() => {
+  const clearRestartTimer = useCallback(() => {
+    if (restartTimerRef.current !== null) {
+      window.clearTimeout(restartTimerRef.current);
+      restartTimerRef.current = null;
+    }
+  }, []);
+
+  const abortVoiceRecognition = useCallback(() => {
+    shouldKeepListeningRef.current = false;
+    clearRestartTimer();
     if (recognitionRef.current) {
       try {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
         recognitionRef.current.abort();
       } catch {
         // Ignore abort errors
       }
       recognitionRef.current = null;
     }
+    sessionFinalRef.current = '';
+    interimRef.current = '';
     setIsListening(false);
     setInterimTranscript('');
-  }, []);
+  }, [clearRestartTimer]);
 
   const applyVoiceTranscript = useCallback(
     (rawPhrase: string) => {
@@ -213,9 +234,11 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     [categories, formasPagamento, cartoes, titulares],
   );
 
-  const startVoiceRecognition = useCallback(() => {
+  const launchRecognitionSession = useCallback(() => {
     const Ctor = getSpeechRecognitionCtor();
     if (!Ctor) {
+      shouldKeepListeningRef.current = false;
+      setIsListening(false);
       setShowPhraseFallback(true);
       setVoiceErrorMsg(
         'Seu navegador não suporta reconhecimento de voz nativo. Use o campo abaixo para digitar ou ditar pelo teclado.',
@@ -224,62 +247,91 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       return;
     }
 
-    stopVoiceRecognition();
-    setVoiceErrorMsg('');
-    setVoiceStatusMsg('Ouvindo... Fale o gasto ou receita em português.');
-    setInterimTranscript('');
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.abort();
+      } catch {
+        // Ignore abort errors
+      }
+      recognitionRef.current = null;
+    }
 
     try {
       const recognition = new Ctor();
       recognition.lang = 'pt-BR';
       recognition.interimResults = true;
-      recognition.continuous = false;
+      recognition.continuous = true;
       recognition.maxAlternatives = 1;
 
-      let finalCaptured = '';
-      let latestInterim = '';
+      sessionFinalRef.current = '';
+      interimRef.current = '';
 
       recognition.onresult = (event) => {
-        let interim = '';
-        let finalText = '';
+        let sessionFinal = '';
+        let sessionInterim = '';
         for (let i = 0; i < event.results.length; i++) {
           const res = event.results[i];
-          const text = res[0]?.transcript || '';
+          const text = (res[0]?.transcript || '').trim();
+          if (!text) continue;
           if (res.isFinal) {
-            finalText += ` ${text}`;
+            sessionFinal = mergeSpeechSegments(sessionFinal, text);
           } else {
-            interim += ` ${text}`;
+            sessionInterim = mergeSpeechSegments(sessionInterim, text);
           }
         }
-        if (interim.trim()) {
-          latestInterim = interim.trim();
-          setInterimTranscript(latestInterim);
-        }
-        if (finalText.trim()) {
-          finalCaptured = finalText.trim();
-          latestInterim = '';
-          setInterimTranscript('');
-          applyVoiceTranscript(finalCaptured);
-        }
+
+        sessionFinalRef.current = sessionFinal;
+        interimRef.current = sessionInterim;
+
+        const accumulatedPhrase = mergeSpeechSegments(
+          basePhraseRef.current,
+          sessionFinal,
+        );
+        manualPhraseRef.current = accumulatedPhrase;
+        setManualPhrase(accumulatedPhrase);
+        setInterimTranscript(sessionInterim);
       };
 
       recognition.onerror = (event) => {
+        const code = event?.error || 'unknown';
+        if (code === 'no-speech' && shouldKeepListeningRef.current) {
+          // Keep recording active on temporary silence; onend will restart if needed
+          return;
+        }
+        if (code === 'aborted' && !shouldKeepListeningRef.current) {
+          return;
+        }
+
+        shouldKeepListeningRef.current = false;
+        clearRestartTimer();
         setIsListening(false);
         setInterimTranscript('');
         recognitionRef.current = null;
-        const code = event?.error || 'unknown';
+
+        const committed = mergeSpeechSegments(
+          basePhraseRef.current,
+          sessionFinalRef.current,
+          interimRef.current,
+        );
+        if (committed) {
+          basePhraseRef.current = committed;
+          manualPhraseRef.current = committed;
+          setManualPhrase(committed);
+        }
+        sessionFinalRef.current = '';
+        interimRef.current = '';
+
         if (code === 'not-allowed' || code === 'service-not-allowed') {
           setVoiceErrorMsg(
             'Permissão de microfone bloqueada. Libere o microfone no navegador ou use o campo manual abaixo.',
           );
           setShowPhraseFallback(true);
-        } else if (code === 'no-speech') {
-          setVoiceErrorMsg(
-            'Nenhuma fala detectada. Tente novamente mais perto do microfone.',
-          );
         } else {
           setVoiceErrorMsg(
-            'Não foi possível capturar o áudio agora. Tente novamente ou use o campo de frase abaixo.',
+            'Não foi possível continuar a captura do áudio. Revise a frase abaixo ou tente novamente.',
           );
           setShowPhraseFallback(true);
         }
@@ -287,10 +339,29 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       };
 
       recognition.onend = () => {
-        setIsListening(false);
         recognitionRef.current = null;
-        if (!finalCaptured && latestInterim.trim()) {
-          applyVoiceTranscript(latestInterim.trim());
+        const committed = mergeSpeechSegments(
+          basePhraseRef.current,
+          sessionFinalRef.current,
+        );
+        basePhraseRef.current = committed;
+        sessionFinalRef.current = '';
+        manualPhraseRef.current = committed;
+        setManualPhrase(committed);
+
+        if (shouldKeepListeningRef.current) {
+          interimRef.current = '';
+          setInterimTranscript('');
+          clearRestartTimer();
+          restartTimerRef.current = window.setTimeout(() => {
+            if (shouldKeepListeningRef.current) {
+              launchRecognitionSession();
+            }
+          }, 120);
+        } else {
+          setIsListening(false);
+          interimRef.current = '';
+          setInterimTranscript('');
         }
       };
 
@@ -298,16 +369,122 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
       setIsListening(true);
       recognition.start();
     } catch {
+      shouldKeepListeningRef.current = false;
       setIsListening(false);
       setShowPhraseFallback(true);
       setVoiceErrorMsg(
         'Não foi possível iniciar o microfone neste navegador. Use o campo de frase abaixo.',
       );
     }
-  }, [applyVoiceTranscript, stopVoiceRecognition]);
+  }, [clearRestartTimer]);
+
+  const startVoiceRecognition = useCallback(
+    (initialPhraseOverride?: string) => {
+      const Ctor = getSpeechRecognitionCtor();
+      if (!Ctor) {
+        setShowPhraseFallback(true);
+        setVoiceErrorMsg(
+          'Seu navegador não suporta reconhecimento de voz nativo. Use o campo abaixo para digitar ou ditar pelo teclado.',
+        );
+        setTimeout(() => manualPhraseInputRef.current?.focus(), 50);
+        return;
+      }
+
+      clearRestartTimer();
+      const seedPhrase = (
+        initialPhraseOverride !== undefined
+          ? initialPhraseOverride
+          : manualPhraseRef.current
+      ).trim();
+      basePhraseRef.current = seedPhrase;
+      manualPhraseRef.current = seedPhrase;
+      setManualPhrase(seedPhrase);
+      if (initialPhraseOverride === '') {
+        setVoiceTranscript('');
+        setLastParsedVoice(null);
+      }
+      sessionFinalRef.current = '';
+      interimRef.current = '';
+      shouldKeepListeningRef.current = true;
+      setShowPhraseFallback(true);
+      setVoiceErrorMsg('');
+      setVoiceStatusMsg(
+        'Ouvindo... fale todos os dados e clique em "Parar e Interpretar" para concluir.',
+      );
+      setInterimTranscript('');
+      launchRecognitionSession();
+    },
+    [clearRestartTimer, launchRecognitionSession],
+  );
+
+  const stopAndInterpretVoice = useCallback(() => {
+    shouldKeepListeningRef.current = false;
+    clearRestartTimer();
+
+    const accumulatedPhrase = mergeSpeechSegments(
+      basePhraseRef.current,
+      sessionFinalRef.current,
+      interimRef.current,
+    );
+
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onend = null;
+        recognitionRef.current.stop();
+      } catch {
+        // Ignore stop errors
+      }
+      recognitionRef.current = null;
+    }
+
+    basePhraseRef.current = accumulatedPhrase;
+    sessionFinalRef.current = '';
+    interimRef.current = '';
+    manualPhraseRef.current = accumulatedPhrase;
+    setIsListening(false);
+    setInterimTranscript('');
+    setManualPhrase(accumulatedPhrase);
+
+    if (!accumulatedPhrase) {
+      setVoiceStatusMsg('');
+      setVoiceErrorMsg(
+        'Nenhuma fala foi capturada. Clique em "Falar" novamente ou digite a frase abaixo.',
+      );
+      return;
+    }
+
+    applyVoiceTranscript(accumulatedPhrase);
+  }, [applyVoiceTranscript, clearRestartTimer]);
+
+  const handleClearPhrase = useCallback(() => {
+    basePhraseRef.current = '';
+    sessionFinalRef.current = '';
+    interimRef.current = '';
+    manualPhraseRef.current = '';
+    setManualPhrase('');
+    setInterimTranscript('');
+    setVoiceTranscript('');
+    setLastParsedVoice(null);
+    setVoiceErrorMsg('');
+
+    if (shouldKeepListeningRef.current) {
+      clearRestartTimer();
+      setVoiceStatusMsg(
+        'Frase limpa. Continue falando e clique em "Parar e Interpretar" ao concluir.',
+      );
+      launchRecognitionSession();
+    } else {
+      setVoiceStatusMsg('');
+      setTimeout(() => manualPhraseInputRef.current?.focus(), 30);
+    }
+  }, [clearRestartTimer, launchRecognitionSession]);
 
   const handleClearVoice = () => {
-    stopVoiceRecognition();
+    abortVoiceRecognition();
+    basePhraseRef.current = '';
+    manualPhraseRef.current = '';
     setVoiceTranscript('');
     setLastParsedVoice(null);
     setVoiceStatusMsg('');
@@ -334,20 +511,23 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
   useEffect(() => {
     if (!isOpen) {
-      stopVoiceRecognition();
+      abortVoiceRecognition();
     }
-  }, [isOpen, stopVoiceRecognition]);
+  }, [isOpen, abortVoiceRecognition]);
 
   useEffect(() => {
     return () => {
-      stopVoiceRecognition();
+      abortVoiceRecognition();
     };
-  }, [stopVoiceRecognition]);
+  }, [abortVoiceRecognition]);
 
   useEffect(() => {
     const justOpened = isOpen && !prevOpenRef.current;
     prevOpenRef.current = isOpen;
     if (!justOpened) return;
+    abortVoiceRecognition();
+    basePhraseRef.current = '';
+    manualPhraseRef.current = '';
     setErrorMsg('');
     setShowQuickCardForm(false);
     setQuickCardName('');
@@ -393,7 +573,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
 
       if (autoStartVoice) {
         if (getSpeechRecognitionCtor()) {
-          setTimeout(() => startVoiceRecognition(), 80);
+          setTimeout(() => startVoiceRecognition(''), 80);
         } else {
           setShowPhraseFallback(true);
           setVoiceStatusMsg(
@@ -413,6 +593,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
     formasPagamento,
     titulares,
     cartoes,
+    abortVoiceRecognition,
     startVoiceRecognition,
   ]);
 
@@ -672,22 +853,26 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                   <button
                     type="button"
                     onClick={() =>
-                      isListening ? stopVoiceRecognition() : startVoiceRecognition()
+                      isListening
+                        ? stopAndInterpretVoice()
+                        : startVoiceRecognition()
                     }
                     aria-pressed={isListening}
                     aria-label={
-                      isListening ? 'Parar ditado por voz' : 'Falar lançamento'
+                      isListening
+                        ? 'Parar e interpretar ditado por voz'
+                        : 'Falar lançamento'
                     }
                     className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
                       isListening
-                        ? 'bg-[var(--semantic-expense)] border-[var(--semantic-expense)] text-white'
+                        ? 'bg-[var(--semantic-expense)] border-[var(--semantic-expense)] text-white animate-pulse'
                         : 'bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] border-transparent text-[var(--accent-primary-text)]'
                     }`}
                   >
                     {isListening ? (
                       <>
                         <MicOff className="w-3.5 h-3.5" aria-hidden="true" />
-                        <span>Parar</span>
+                        <span>Parar e Interpretar</span>
                       </>
                     ) : (
                       <>
@@ -697,15 +882,19 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                     )}
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setShowPhraseFallback((v) => !v)}
-                    aria-expanded={showPhraseFallback}
-                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[var(--border-strong)] bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-hover)] text-xs font-medium text-[var(--text-secondary)] transition-colors cursor-pointer"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span>{showPhraseFallback ? 'Ocultar texto' : 'Digitar frase'}</span>
-                  </button>
+                  {!isListening && (
+                    <button
+                      type="button"
+                      onClick={() => setShowPhraseFallback((v) => !v)}
+                      aria-expanded={showPhraseFallback}
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-[var(--border-strong)] bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-hover)] text-xs font-medium text-[var(--text-secondary)] transition-colors cursor-pointer"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" aria-hidden="true" />
+                      <span>
+                        {showPhraseFallback ? 'Ocultar texto' : 'Digitar frase'}
+                      </span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -713,17 +902,23 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 <div
                   role="status"
                   aria-live="polite"
-                  className="rounded-lg border border-[var(--semantic-expense)]/40 bg-[var(--semantic-expense-bg)] px-3 py-2 text-xs text-[var(--text-primary)] flex items-center gap-2"
+                  data-testid="voice-listening-banner"
+                  className="rounded-lg border border-[var(--semantic-expense)]/40 bg-[var(--semantic-expense-bg)] px-3 py-2 text-xs text-[var(--text-primary)] space-y-1"
                 >
-                  <span
-                    className="w-2 h-2 rounded-full bg-[var(--semantic-expense)] animate-ping shrink-0"
-                    aria-hidden="true"
-                  />
-                  <span>
-                    {interimTranscript
-                      ? `Ouvindo: "${interimTranscript}"`
-                      : 'Ouvindo... Fale agora o valor, local e forma de pagamento.'}
-                  </span>
+                  <div className="flex items-center gap-2 font-semibold">
+                    <span
+                      className="w-2 h-2 rounded-full bg-[var(--semantic-expense)] animate-ping shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span>
+                      Ouvindo... fale todos os dados e clique para concluir
+                    </span>
+                  </div>
+                  {interimTranscript && (
+                    <p className="text-[11px] text-[var(--text-secondary)] pl-4 italic break-words">
+                      Em andamento: &ldquo;{interimTranscript}&rdquo;
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -751,33 +946,58 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                 </p>
               )}
 
-              {showPhraseFallback && (
-                <div className="flex flex-col sm:flex-row gap-2 pt-0.5">
-                  <label htmlFor="voice-phrase-input" className="sr-only">
-                    Frase do lançamento por voz
-                  </label>
-                  <input
-                    ref={manualPhraseInputRef}
-                    id="voice-phrase-input"
-                    type="text"
-                    value={manualPhrase}
-                    onChange={(e) => setManualPhrase(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        applyVoiceTranscript(manualPhrase);
-                      }
-                    }}
-                    placeholder="Ex.: Recebi 5000 de salário no pix ou Paguei 120 e 50 no mercado Nubank 2x"
-                    className="flex-1 bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-md px-3 py-1.5 text-xs sm:text-sm text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)] focus:outline-none focus:border-[var(--accent-underline)]"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => applyVoiceTranscript(manualPhrase)}
-                    className="px-3 py-1.5 rounded-md border-[1.5px] border-[var(--accent-blue-border)] bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-hover)] text-xs font-semibold text-[var(--accent-blue)] whitespace-nowrap cursor-pointer"
-                  >
-                    Interpretar frase
-                  </button>
+              {(showPhraseFallback || isListening || Boolean(manualPhrase)) && (
+                <div className="space-y-2 pt-0.5">
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <label htmlFor="voice-phrase-input" className="sr-only">
+                      Frase do lançamento por voz
+                    </label>
+                    <input
+                      ref={manualPhraseInputRef}
+                      id="voice-phrase-input"
+                      type="text"
+                      readOnly={isListening}
+                      value={manualPhrase}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        manualPhraseRef.current = val;
+                        basePhraseRef.current = val;
+                        setManualPhrase(val);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          if (isListening) {
+                            stopAndInterpretVoice();
+                          } else {
+                            applyVoiceTranscript(manualPhrase);
+                          }
+                        }
+                      }}
+                      placeholder="Ex.: Recebi 5000 de salário no pix ou Paguei 120 e 50 no mercado Nubank 2x"
+                      className="flex-1 bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-md px-3 py-1.5 text-xs sm:text-sm text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)] focus:outline-none focus:border-[var(--accent-underline)]"
+                    />
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          isListening
+                            ? stopAndInterpretVoice()
+                            : applyVoiceTranscript(manualPhrase)
+                        }
+                        className="flex-1 sm:flex-initial px-3 py-1.5 rounded-md border-[1.5px] border-[var(--accent-blue-border)] bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-hover)] text-xs font-semibold text-[var(--accent-blue)] whitespace-nowrap cursor-pointer"
+                      >
+                        Interpretar frase
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleClearPhrase}
+                        className="px-2.5 py-1.5 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-surface-alt)] hover:bg-[var(--semantic-expense-bg)] text-xs font-medium text-[var(--text-muted)] hover:text-[var(--semantic-expense)] whitespace-nowrap cursor-pointer transition-colors"
+                      >
+                        Limpar frase
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -800,7 +1020,7 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
                         type="button"
                         onClick={() => {
                           if (isSpeechSupported) {
-                            startVoiceRecognition();
+                            startVoiceRecognition('');
                           } else {
                             setShowPhraseFallback(true);
                             manualPhraseInputRef.current?.focus();

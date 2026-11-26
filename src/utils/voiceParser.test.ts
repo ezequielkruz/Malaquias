@@ -9,6 +9,7 @@ import {
 import {
   extractAmountFromSpeech,
   extractInstallmentsFromSpeech,
+  mergeSpeechSegments,
   parseVoiceTransaction,
 } from './voiceParser';
 
@@ -96,3 +97,23 @@ test('parseVoiceTransaction matches Nubank, farmácia, combustível, and safe de
   assert.equal(fallback.categoria, 'ALIMENTAÇÃO');
   assert.equal(fallback.descricao, 'Supermercado');
 });
+
+test('mergeSpeechSegments accumulates multi-pause segments into a single continuous phrase', () => {
+  const step1 = mergeSpeechSegments('', 'Comprei eletrodoméstico');
+  const step2 = mergeSpeechSegments(step1, '  por 1800 reais  ');
+  const step3 = mergeSpeechSegments(step2, 'no cartão Santander', 'em 6 vezes');
+  assert.equal(
+    step3,
+    'Comprei eletrodoméstico por 1800 reais no cartão Santander em 6 vezes',
+  );
+
+  const parsed = parseVoiceTransaction(step3, BASE_CTX);
+  assert.equal(parsed.tipo, 'DESPESA');
+  assert.equal(parsed.valor, 1800);
+  assert.equal(parsed.formaPagamento, 'CC');
+  assert.equal(parsed.cartaoId, 'cc_santander');
+  assert.equal(parsed.parcelas, 6);
+  assert.equal(parsed.categoria, 'CASA');
+  assert.equal(parsed.descricao, 'Eletrodomésticos');
+});
+
