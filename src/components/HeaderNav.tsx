@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import {
+  Archive,
   ArrowLeftRight,
   CalendarRange,
   ChevronLeft,
@@ -29,7 +30,8 @@ interface HeaderNavProps {
   availableYears: number[];
   onChangePeriod: (ano: number, mes: number) => void;
   onExportPeriodJson: () => void;
-  onImportJsonFiles: (files: FileList) => void;
+  onExportFullBackupJson: () => void;
+  onImportJsonFiles: (files: File[] | FileList) => void;
   onOpenResetModal: () => void;
   theme: ThemeId;
   onChangeTheme: (theme: ThemeId) => void;
@@ -58,6 +60,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
   availableYears,
   onChangePeriod,
   onExportPeriodJson,
+  onExportFullBackupJson,
   onImportJsonFiles,
   onOpenResetModal,
   theme,
@@ -83,8 +86,9 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      onImportJsonFiles(e.target.files);
+      const selectedFiles = Array.from(e.target.files);
       e.target.value = '';
+      onImportJsonFiles(selectedFiles);
     }
   };
 
@@ -232,7 +236,7 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
 
       {/* Workspace Period & JSON Portability Bar */}
       <div className="app-period-bar border-b border-[var(--border-subtle)] bg-[var(--bg-canvas)] transition-colors">
-        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+        <div className="max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-8 py-3 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
           {/* Active Period Controls */}
           <div className="flex items-center justify-between sm:justify-start gap-3">
             <span className="text-xs font-bold text-[var(--accent-blue)] whitespace-nowrap">
@@ -297,8 +301,8 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
             </div>
           </div>
 
-          {/* JSON Export, Multi-File Import & Reset / Modo Amigo */}
-          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-2 w-full md:w-auto">
+          {/* JSON Export, Full Backup, Multi-File Import & Reset / Modo Amigo */}
+          <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center lg:justify-end gap-2 w-full lg:w-auto">
             <button
               type="button"
               onClick={onExportPeriodJson}
@@ -309,6 +313,18 @@ export const HeaderNav: React.FC<HeaderNavProps> = ({
                 aria-hidden="true"
               />
               <span>Exportar JSON do Período</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={onExportFullBackupJson}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg border-[1.5px] border-[var(--accent-underline)]/55 bg-[var(--bg-surface)] hover:bg-[var(--bg-surface-hover)] text-[var(--text-primary)] text-xs sm:text-sm font-semibold transition-colors text-center sm:whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              <Archive
+                className="w-4 h-4 text-[var(--accent-gold)] shrink-0"
+                aria-hidden="true"
+              />
+              <span>Exportar Backup Completo (Todos os Períodos)</span>
             </button>
 
             <input

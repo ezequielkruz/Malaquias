@@ -178,6 +178,7 @@ export const DEFAULT_BANKS: BankAccount[] = [
 
 export function createInitialFinanceStore(): FinanceStore {
   const now = new Date();
+  const nowIso = now.toISOString();
   const activeAno = now.getFullYear();
   const activeMes = now.getMonth() + 1;
   const initialKey = getPeriodKey(activeAno, activeMes);
@@ -187,7 +188,7 @@ export function createInitialFinanceStore(): FinanceStore {
     ano: activeAno,
     mes: activeMes,
     lancamentos: [],
-    bancos: DEFAULT_BANKS.map((b) => ({ ...b })),
+    bancos: DEFAULT_BANKS.map((b) => ({ ...b, updatedAt: nowIso })),
     metas: {},
   };
 
@@ -200,11 +201,12 @@ export function createInitialFinanceStore(): FinanceStore {
     },
     categorias: DEFAULT_CATEGORIES.map((c) => ({
       ...c,
+      updatedAt: nowIso,
       subcategorias: [...c.subcategorias],
     })),
     titulares: [...DEFAULT_TITULARES],
     formasPagamento: [...DEFAULT_PAYMENT_METHODS],
-    cartoes: DEFAULT_CREDIT_CARDS.map((c) => ({ ...c })),
+    cartoes: DEFAULT_CREDIT_CARDS.map((c) => ({ ...c, updatedAt: nowIso })),
   };
 }
 

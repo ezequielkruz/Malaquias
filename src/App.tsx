@@ -10,6 +10,7 @@ import type {
 } from './types/finance';
 import {
   addTransactionsBatchToStore,
+  buildFullBackupExportPayload,
   buildPeriodExportPayload,
   clearStoreTransactions,
   deleteTransactionFromStore,
@@ -20,6 +21,7 @@ import {
 } from './utils/calculations';
 import {
   formatExportFilename,
+  formatFullBackupFilename,
   formatPeriodLabel,
   generateId,
   getPeriodKey,
@@ -148,10 +150,12 @@ export default function App() {
   // Bank CRUD
   const handleAddBank = (nome: string) => {
     const key = getPeriodKey(store.activeAno, store.activeMes);
+    const nowIso = new Date().toISOString();
     setStore((prev) => {
       const snap = getOrCreatePeriodSnapshot(prev, prev.activeAno, prev.activeMes);
       const newBank: BankAccount = {
         id: generateId('bank'),
+        updatedAt: nowIso,
         nome,
         saldoConta: 0,
         descontoComprometido: 0,
@@ -176,6 +180,7 @@ export default function App() {
 
   const handleUpdateBank = (id: string, patch: Partial<BankAccount>) => {
     const key = getPeriodKey(store.activeAno, store.activeMes);
+    const nowIso = new Date().toISOString();
     setStore((prev) => {
       const snap = getOrCreatePeriodSnapshot(prev, prev.activeAno, prev.activeMes);
       return {
@@ -184,7 +189,9 @@ export default function App() {
           ...prev.periods,
           [key]: {
             ...snap,
-            bancos: snap.bancos.map((b) => (b.id === id ? { ...b, ...patch } : b)),
+            bancos: snap.bancos.map((b) =>
+              b.id === id ? { ...b, ...patch, updatedAt: nowIso } : b,
+            ),
           },
         },
       };
@@ -210,6 +217,7 @@ export default function App() {
 
   // Categories, Titulares & Payment Methods CRUD
   const handleAddCategory = (nome: string, tipo: TransactionType) => {
+    const nowIso = new Date().toISOString();
     setStore((prev) => {
       if (
         prev.categorias.some(
@@ -224,6 +232,7 @@ export default function App() {
           ...prev.categorias,
           {
             id: generateId('cat'),
+            updatedAt: nowIso,
             nome,
             tipo,
             subcategorias: ['Outros'],
@@ -241,23 +250,26 @@ export default function App() {
   };
 
   const handleAddSubcategory = (categoryId: string, subName: string) => {
+    const nowIso = new Date().toISOString();
     setStore((prev) => ({
       ...prev,
       categorias: prev.categorias.map((c) =>
         c.id === categoryId && !c.subcategorias.includes(subName)
-          ? { ...c, subcategorias: [...c.subcategorias, subName] }
+          ? { ...c, updatedAt: nowIso, subcategorias: [...c.subcategorias, subName] }
           : c,
       ),
     }));
   };
 
   const handleDeleteSubcategory = (categoryId: string, subName: string) => {
+    const nowIso = new Date().toISOString();
     setStore((prev) => ({
       ...prev,
       categorias: prev.categorias.map((c) =>
         c.id === categoryId
           ? {
               ...c,
+              updatedAt: nowIso,
               subcategorias: c.subcategorias.filter((s) => s !== subName),
             }
           : c,
@@ -315,6 +327,7 @@ export default function App() {
 
     const newCard: CreditCardConfig = {
       id: generateId('cc'),
+      updatedAt: new Date().toISOString(),
       nome: cleanName,
       diaVencimento: due,
     };
@@ -334,11 +347,12 @@ export default function App() {
     const cleanName = nome.trim();
     const due = Math.min(Math.max(Math.round(diaVencimento), 1), 31);
     if (!cleanName) return;
+    const nowIso = new Date().toISOString();
 
     setStore((prev) => ({
       ...prev,
       cartoes: (prev.cartoes || []).map((c) =>
-        c.id === id ? { ...c, nome: cleanName, diaVencimento: due } : c,
+        c.id === id ? { ...c, nome: cleanName, diaVencimento: due, updatedAt: nowIso } : c,
       ),
     }));
   };
@@ -350,14 +364,8 @@ export default function App() {
     }));
   };
 
-  // JSON Export & Multi-File Import
-  const handleExportPeriodJson = () => {
-    const payload = buildPeriodExportPayload(
-      activePeriod,
-      store.categorias,
-      store.cartoes || [],
-    );
-    const filename = formatExportFilename(store.activeAno, store.activeMes);
+  // JSON Export (Period + Full Backup) & Multi-File Smart Merge Import
+  const triggerJsonDownload = (payload: unknown, filename: string) => {
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
       type: 'application/json',
     });
@@ -369,10 +377,37 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  };
+
+  const handleExportPeriodJson = () => {
+    const payload = buildPeriodExportPayload(
+      activePeriod,
+      store.categorias,
+      store.cartoes || [],
+    );
+    const filename = formatExportFilename(store.activeAno, store.activeMes);
+    triggerJsonDownload(payload, filename);
 
     setNotice({
       kind: 'success',
       message: `Arquivo "${filename}" exportado com ${activePeriod.lancamentos.length} lançamento(s) e ${activePeriod.bancos.length} instituição(ões).`,
+    });
+  };
+
+  const handleExportFullBackupJson = () => {
+    const payload = buildFullBackupExportPayload(store);
+    const filename = formatFullBackupFilename();
+    triggerJsonDownload(payload, filename);
+
+    const periodCount = Object.keys(payload.periods).length;
+    const totalTx = Object.values(payload.periods).reduce(
+      (sum, snap) => sum + snap.lancamentos.length,
+      0,
+    );
+
+    setNotice({
+      kind: 'success',
+      message: `Backup completo "${filename}" exportado com ${periodCount} período(s) e ${totalTx} lançamento(s).`,
     });
   };
 
@@ -396,16 +431,19 @@ export default function App() {
     });
   };
 
-  const handleImportJsonFiles = async (files: FileList) => {
-    const rawFiles: Array<{ name: string; content: string }> = [];
-    for (let i = 0; i < files.length; i++) {
-      const f = files[i];
-      const content = await f.text();
-      rawFiles.push({ name: f.name, content });
-    }
+  const handleImportJsonFiles = async (files: File[] | FileList) => {
+    const selectedFiles = Array.from(files);
+    const rawFiles = await Promise.all(
+      selectedFiles.map(async (f) => ({
+        name: f.name,
+        content: await f.text(),
+      })),
+    );
 
     const result = parseAndMergeImportedPayloads(store, rawFiles);
     setStore(result.nextStore);
+
+    const mergeSummary = `Importação concluída: ${result.addedCount} novo(s) lançamento(s) adicionado(s), ${result.updatedCount} atualizado(s) e ${result.ignoredCount} ignorado(s) por já existirem (${result.importedPeriods.length} período(s)).`;
 
     if (result.errors.length > 0 && result.importedPeriods.length === 0) {
       setNotice({
@@ -415,15 +453,12 @@ export default function App() {
     } else if (result.errors.length > 0) {
       setNotice({
         kind: 'success',
-        message: `${result.importedPeriods.length} período(s) consolidado(s) (${result.importedTransactionsCount} lançamentos). Avisos: ${result.errors.join(' ')}`,
+        message: `${mergeSummary} Avisos: ${result.errors.join(' ')}`,
       });
     } else {
       setNotice({
         kind: 'success',
-        message:
-          result.importedPeriods.length === 1
-            ? `Período ${result.importedPeriods[0]} importado com ${result.importedTransactionsCount} lançamento(s).`
-            : `${result.importedPeriods.length} períodos consolidados (${result.importedTransactionsCount} lançamentos) no Orçamento Anual.`,
+        message: mergeSummary,
       });
     }
   };
@@ -446,6 +481,7 @@ export default function App() {
         availableYears={availableYears}
         onChangePeriod={handleChangePeriod}
         onExportPeriodJson={handleExportPeriodJson}
+        onExportFullBackupJson={handleExportFullBackupJson}
         onImportJsonFiles={handleImportJsonFiles}
         onOpenResetModal={() => setIsResetModalOpen(true)}
         theme={theme}
@@ -594,7 +630,7 @@ export default function App() {
         totalTransactionsCount={totalTransactionsCount}
         banksCount={activePeriod.bancos.length}
         onClose={() => setIsResetModalOpen(false)}
-        onExportBackup={handleExportPeriodJson}
+        onExportBackup={handleExportFullBackupJson}
         onClearTransactions={handleClearTransactions}
         onResetFreshStart={handleResetFreshStart}
       />

@@ -41,6 +41,13 @@ export function formatExportFilename(ano: number, mes: number): string {
   return `financas_${ano}_${String(mes).padStart(2, '0')}.json`;
 }
 
+export function formatFullBackupFilename(date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `gestor_financeiro_3_10_backup_${y}-${m}-${d}.json`;
+}
+
 export function formatBRL(value: number, showSign = false): string {
   const safeVal = Number.isFinite(value) ? value : 0;
   const formatted = new Intl.NumberFormat('pt-BR', {
@@ -144,7 +151,69 @@ export function getDefaultDateForPeriod(ano: number, mes: number, dia = 1): stri
 
 export function generateId(prefix = 'id'): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `${prefix}_${crypto.randomUUID().slice(0, 8)}`;
+    return `${prefix}_${crypto.randomUUID()}`;
   }
-  return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;
+  const randA = Math.random().toString(36).slice(2, 10);
+  const randB = Math.random().toString(36).slice(2, 10);
+  return `${prefix}_${Date.now().toString(36)}_${randA}${randB}`;
 }
+
+export function toTimestampMs(value?: string | number | null): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim()) {
+    const asNum = Number(value);
+    if (Number.isFinite(asNum) && /^\d+$/.test(value.trim())) {
+      return asNum;
+    }
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+/**
+ * Generates a deterministic synchronous hash ID for legacy imported transactions
+ * missing an `id`, based on data + descricao + valor + tipo + banco.
+ */
+export function computeDeterministicTransactionId(fields: {
+  data?: string;
+  descricao?: string;
+  valor?: number;
+  tipo?: string;
+  banco?: string;
+  cartaoNome?: string;
+  formaPagamento?: string;
+}): string {
+  const norm = (v?: string) =>
+    String(v || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/\s+/g, ' ')
+      .trim();
+
+  const bancoRef = norm(fields.banco || fields.cartaoNome || fields.formaPagamento);
+  const canonical = [
+    norm(fields.data),
+    norm(fields.descricao),
+    (Number(fields.valor) || 0).toFixed(2),
+    norm(fields.tipo || 'DESPESA'),
+    bancoRef,
+  ].join('|');
+
+  let h1 = 0x811c9dc5;
+  let h2 = 0x811c9dc5;
+  for (let i = 0; i < canonical.length; i++) {
+    const code = canonical.charCodeAt(i);
+    h1 ^= code;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 ^= code + ((i + 1) & 0xff);
+    h2 = Math.imul(h2, 0x01000193);
+  }
+  const hex1 = (h1 >>> 0).toString(16).padStart(8, '0');
+  const hex2 = (h2 >>> 0).toString(16).padStart(8, '0');
+  return `tx_hash_${hex1}${hex2}`;
+}
+

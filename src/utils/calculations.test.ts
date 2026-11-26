@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   addTransactionsBatchToStore,
+  buildFullBackupExportPayload,
   buildInstallmentPlan,
   buildPeriodExportPayload,
   clampDayToMonth,
@@ -16,13 +17,16 @@ import {
   deleteTransactionFromStore,
   filterTransactions,
   getDefaultFirstInstallmentStart,
+  normalizeAndMigrateStore,
   parseAndMergeImportedPayloads,
   resetStoreForFreshStart,
   saveTransactionInStore,
   splitAmountIntoInstallments,
 } from './calculations';
 import {
+  computeDeterministicTransactionId,
   formatBRL,
+  formatFullBackupFilename,
   getPeriodKey,
   maskBRDateInput,
   parseBRDate,
@@ -879,6 +883,297 @@ test('collectAllPeriodTransactions, accent-insensitive filterTransactions, and c
   assert.equal(store.periods['2026-10'].lancamentos.length, 0);
   assert.equal(collectAllPeriodTransactions(store.periods).length, 2);
 });
+
+test('full backup export metadata, legacy id/updatedAt migration, and smart PC-mobile conflict merge', () => {
+  // 1. Legacy store migration guarantees mandatory id and updatedAt
+  const legacyStore: FinanceStore = {
+    version: '3.10',
+    activeAno: 2026,
+    activeMes: 11,
+    periods: {
+      '2026-11': {
+        periodoKey: '2026-11',
+        ano: 2026,
+        mes: 11,
+        lancamentos: [
+          {
+            id: '',
+            data: '05/11/2026',
+            mes: 11,
+            ano: 2026,
+            tipo: 'RECEITA',
+            categoria: 'RECEITAS',
+            descricao: 'Salário',
+            valor: 6500,
+            obs: '',
+            formaPagamento: 'PIXR',
+            titular: 'ezequiel',
+          },
+          {
+            id: 'tx_pc_newer',
+            updatedAt: '2026-11-20T15:00:00.000Z',
+            data: '10/11/2026',
+            mes: 11,
+            ano: 2026,
+            tipo: 'DESPESA',
+            categoria: 'ALIMENTAÇÃO',
+            descricao: 'Supermercado',
+            valor: 420,
+            obs: 'Versão PC mais recente',
+            formaPagamento: 'CC',
+            cartaoNome: 'Nubank',
+            titular: 'ezequiel',
+          },
+          {
+            id: 'tx_mobile_newer',
+            updatedAt: '2026-11-18T10:00:00.000Z',
+            data: '12/11/2026',
+            mes: 11,
+            ano: 2026,
+            tipo: 'DESPESA',
+            categoria: 'TRANSPORTE',
+            descricao: 'Combustível',
+            valor: 150,
+            obs: 'Versão PC antiga',
+            formaPagamento: 'PIXD',
+            titular: 'ezequiel',
+          },
+        ],
+        bancos: [
+          {
+            id: '',
+            nome: 'Nubank',
+            saldoConta: 1200,
+            descontoComprometido: 0,
+            caixinhaCofrinho: 0,
+            investimentos: 5000,
+            criptomoedas: 0,
+            faturaCC: 400,
+            dividendosRecebidos: 0,
+          },
+        ],
+        metas: {},
+      },
+    },
+    categorias: DEFAULT_CATEGORIES.map((c) => ({ ...c, subcategorias: [...c.subcategorias] })),
+    titulares: [...DEFAULT_TITULARES],
+    formasPagamento: [...DEFAULT_PAYMENT_METHODS],
+    cartoes: DEFAULT_CREDIT_CARDS.map((c) => ({ ...c })),
+  };
+
+  const migrated = normalizeAndMigrateStore(legacyStore, '2026-11-19T12:00:00.000Z');
+  assert.equal(migrated.changed, true);
+  const migTxs = migrated.store.periods['2026-11'].lancamentos;
+  assert.ok(migTxs[0].id.startsWith('tx_hash_'));
+  assert.equal(migTxs[0].updatedAt, '2026-11-19T12:00:00.000Z');
+  assert.ok(migrated.store.periods['2026-11'].bancos[0].id);
+
+  // 2. Full backup & Period export include required metadata
+  const periodExport = buildPeriodExportPayload(
+    migrated.store.periods['2026-11'],
+    migrated.store.categorias,
+    migrated.store.cartoes,
+  );
+  assert.equal(periodExport.appVersion, '3.10');
+  assert.equal(periodExport.exportType, 'period');
+  assert.ok(!Number.isNaN(Date.parse(periodExport.exportedAt)));
+
+  const fullBackup = buildFullBackupExportPayload(migrated.store);
+  assert.equal(fullBackup.appVersion, '3.10');
+  assert.equal(fullBackup.exportType, 'full');
+  assert.ok(!Number.isNaN(Date.parse(fullBackup.exportedAt)));
+  assert.ok(fullBackup.periods['2026-11']);
+  assert.match(formatFullBackupFilename(new Date(2026, 10, 26)), /^gestor_financeiro_3_10_backup_2026-11-26\.json$/);
+
+  // 3. Deterministic hash matches identical legacy records missing id
+  const hashA = computeDeterministicTransactionId({
+    data: '05/11/2026',
+    descricao: 'Salário',
+    valor: 6500,
+    tipo: 'RECEITA',
+    formaPagamento: 'PIXR',
+  });
+  assert.equal(migTxs[0].id, hashA);
+
+  // 4. Multi-file import combining a full backup + a mobile period export
+  const mobileBackupPayload = {
+    appVersion: '3.10',
+    exportType: 'full',
+    exportedAt: '2026-11-21T09:00:00.000Z',
+    periods: {
+      '2026-10': {
+        periodoKey: '2026-10',
+        ano: 2026,
+        mes: 10,
+        lancamentos: [
+          {
+            id: 'tx_mobile_oct_new',
+            updatedAt: '2026-10-15T14:00:00.000Z',
+            data: '15/10/2026',
+            mes: 10,
+            ano: 2026,
+            tipo: 'DESPESA',
+            categoria: 'SAÚDE',
+            descricao: 'Medicamentos',
+            valor: 89.9,
+            obs: 'Adicionado no celular',
+            formaPagamento: 'PIXD',
+            titular: 'ezequiel',
+          },
+        ],
+        bancos: [
+          {
+            id: 'bank_phone_nubank',
+            updatedAt: '2026-10-30T10:00:00.000Z',
+            nome: 'Nubank',
+            saldoConta: 2000,
+            descontoComprometido: 0,
+            caixinhaCofrinho: 0,
+            investimentos: 4500,
+            criptomoedas: 0,
+            faturaCC: 0,
+            dividendosRecebidos: 0,
+          },
+        ],
+        metas: {},
+      },
+    },
+    categorias: [
+      {
+        id: 'cat_dup_saude',
+        nome: 'saúde',
+        tipo: 'DESPESA',
+        subcategorias: ['medicamentos', 'Fisioterapia'],
+      },
+    ],
+  };
+
+  const mobileNovPeriodPayload = {
+    appVersion: '3.10',
+    exportType: 'period',
+    periodo: '2026-11',
+    exportedAt: '2026-11-22T12:00:00.000Z',
+    transacoes: [
+      // Older timestamp -> must be IGNORED (PC version is newer)
+      {
+        id: 'tx_pc_newer',
+        updatedAt: '2026-11-19T08:00:00.000Z',
+        data: '10/11/2026',
+        mes: 11,
+        ano: 2026,
+        tipo: 'DESPESA',
+        categoria: 'ALIMENTAÇÃO',
+        descricao: 'Supermercado',
+        valor: 390,
+        obs: 'Versão antiga celular',
+        formaPagamento: 'CC',
+        titular: 'ezequiel',
+      },
+      // Newer timestamp -> must UPDATE existing (and move period if changed, here same period)
+      {
+        id: 'tx_mobile_newer',
+        updatedAt: '2026-11-22T11:30:00.000Z',
+        data: '12/11/2026',
+        mes: 11,
+        ano: 2026,
+        tipo: 'DESPESA',
+        categoria: 'TRANSPORTE',
+        descricao: 'Combustível',
+        valor: 210,
+        obs: 'Atualizado no celular',
+        formaPagamento: 'PIXD',
+        titular: 'ezequiel',
+      },
+      // Legacy record without id & without updatedAt matching existing hash -> must be IGNORED
+      {
+        data: '05/11/2026',
+        mes: 11,
+        ano: 2026,
+        tipo: 'RECEITA',
+        categoria: 'RECEITAS',
+        descricao: 'Salário',
+        valor: 6500,
+        obs: '',
+        formaPagamento: 'PIXR',
+        titular: 'ezequiel',
+      },
+      // Legacy record without id & new -> must be ADDED with deterministic hash
+      {
+        data: '14/11/2026',
+        mes: 11,
+        ano: 2026,
+        tipo: 'DESPESA',
+        categoria: 'ALIMENTAÇÃO',
+        descricao: 'Padaria',
+        valor: 24.5,
+        obs: 'Sem id antigo',
+        formaPagamento: 'DINHEIRO',
+        titular: 'ezequiel',
+      },
+    ],
+    bancos: [
+      {
+        id: 'bank_phone_nov_nubank',
+        updatedAt: '2026-11-25T10:00:00.000Z',
+        nome: 'nubank',
+        saldoConta: 1850,
+        descontoComprometido: 0,
+        caixinhaCofrinho: 0,
+        investimentos: 5200,
+        criptomoedas: 0,
+        faturaCC: 350,
+        dividendosRecebidos: 0,
+      },
+    ],
+  };
+
+  const mergeResult = parseAndMergeImportedPayloads(migrated.store, [
+    { name: 'backup_celular.json', content: JSON.stringify(mobileBackupPayload) },
+    { name: 'novembro_celular.json', content: JSON.stringify(mobileNovPeriodPayload) },
+  ]);
+
+  assert.equal(mergeResult.errors.length, 0);
+  assert.equal(mergeResult.addedCount, 2); // tx_mobile_oct_new + Padaria
+  assert.equal(mergeResult.updatedCount, 1); // tx_mobile_newer
+  assert.equal(mergeResult.ignoredCount, 2); // tx_pc_newer + Salário legacy hash
+
+  const mergedNovTxs = mergeResult.nextStore.periods['2026-11'].lancamentos;
+  assert.equal(mergedNovTxs.length, 4);
+
+  const pcKept = mergedNovTxs.find((t) => t.id === 'tx_pc_newer')!;
+  assert.equal(pcKept.valor, 420);
+  assert.equal(pcKept.obs, 'Versão PC mais recente');
+
+  const mobileWon = mergedNovTxs.find((t) => t.id === 'tx_mobile_newer')!;
+  assert.equal(mobileWon.valor, 210);
+  assert.equal(mobileWon.obs, 'Atualizado no celular');
+
+  // Banks merged without duplicating "Nubank" / "nubank" and updated to newer snapshot
+  const novBanks = mergeResult.nextStore.periods['2026-11'].bancos;
+  assert.equal(novBanks.length, 1);
+  assert.equal(novBanks[0].saldoConta, 1850);
+
+  // Categories merged without duplicating "SAÚDE" / "saúde" and added "Fisioterapia"
+  const saudeCats = mergeResult.nextStore.categorias.filter(
+    (c) => c.nome.toUpperCase() === 'SAÚDE' && c.tipo === 'DESPESA',
+  );
+  assert.equal(saudeCats.length, 1);
+  assert.ok(saudeCats[0].subcategorias.includes('Fisioterapia'));
+  assert.equal(
+    saudeCats[0].subcategorias.filter((s) => s.toLowerCase() === 'medicamentos').length,
+    1,
+  );
+
+  // Re-importing the exact same legacy Padaria file a second time must ignore it (no duplicate)
+  const repeatLegacyImport = parseAndMergeImportedPayloads(mergeResult.nextStore, [
+    { name: 'novembro_celular.json', content: JSON.stringify(mobileNovPeriodPayload) },
+  ]);
+  assert.equal(repeatLegacyImport.addedCount, 0);
+  assert.equal(repeatLegacyImport.updatedCount, 0);
+  assert.equal(repeatLegacyImport.ignoredCount, 4);
+  assert.equal(repeatLegacyImport.nextStore.periods['2026-11'].lancamentos.length, 4);
+});
+
 
 
 

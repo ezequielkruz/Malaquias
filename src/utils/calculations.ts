@@ -3,13 +3,21 @@ import type {
   CategoryConfig,
   CreditCardConfig,
   FinanceStore,
+  FullBackupExportPayload,
   PeriodExportPayload,
   PeriodSnapshot,
   Transaction,
   TransactionType,
 } from '../types/finance';
 import { DEFAULT_BANKS, DEFAULT_CREDIT_CARDS } from '../data/defaults';
-import { generateId, getPeriodKey, MONTH_ABBR, parseBRDate } from './format';
+import {
+  computeDeterministicTransactionId,
+  generateId,
+  getPeriodKey,
+  MONTH_ABBR,
+  parseBRDate,
+  toTimestampMs,
+} from './format';
 
 export interface CategoryBreakdownItem {
   categoria: string;
@@ -252,6 +260,7 @@ export function saveTransactionInStore(
   const targetKey = getPeriodKey(txData.ano, txData.mes);
   const nextPeriods = { ...prev.periods };
   let movedFromKey: string | null = null;
+  const nowIso = new Date().toISOString();
 
   if (existingId) {
     for (const [periodKey, snap] of Object.entries(nextPeriods)) {
@@ -277,10 +286,10 @@ export function saveTransactionInStore(
   const nextLancamentos = existingId
     ? targetSnap.lancamentos.some((t) => t.id === existingId)
       ? targetSnap.lancamentos.map((t) =>
-          t.id === existingId ? { ...txData, id: existingId } : t,
+          t.id === existingId ? { ...txData, id: existingId, updatedAt: nowIso } : t,
         )
-      : [{ ...txData, id: existingId }, ...targetSnap.lancamentos]
-    : [{ ...txData, id: generateId('tx') }, ...targetSnap.lancamentos];
+      : [{ ...txData, id: existingId, updatedAt: nowIso }, ...targetSnap.lancamentos]
+    : [{ ...txData, id: generateId('tx'), updatedAt: nowIso }, ...targetSnap.lancamentos];
 
   nextPeriods[targetKey] = {
     ...targetSnap,
@@ -528,20 +537,173 @@ export function computeBankHistory(
     });
 }
 
+export function normalizeAndMigrateStore(
+  store: FinanceStore,
+  migrationIso = new Date().toISOString(),
+): { store: FinanceStore; changed: boolean } {
+  let changed = false;
+
+  const nextCartoes: CreditCardConfig[] = (
+    Array.isArray(store.cartoes) ? store.cartoes : DEFAULT_CREDIT_CARDS
+  ).map((c) => {
+    const id = c.id || generateId('cc');
+    const updatedAt = c.updatedAt || migrationIso;
+    if (id !== c.id || updatedAt !== c.updatedAt) changed = true;
+    return { ...c, id, updatedAt };
+  });
+  if (!Array.isArray(store.cartoes)) changed = true;
+
+  const nextCategories: CategoryConfig[] = (
+    Array.isArray(store.categorias) ? store.categorias : []
+  ).map((cat) => {
+    const id = cat.id || generateId('cat');
+    const updatedAt = cat.updatedAt || migrationIso;
+    if (id !== cat.id || updatedAt !== cat.updatedAt) changed = true;
+    return {
+      ...cat,
+      id,
+      updatedAt,
+      subcategorias: Array.isArray(cat.subcategorias) ? [...cat.subcategorias] : ['Outros'],
+    };
+  });
+
+  const nextPeriods: Record<string, PeriodSnapshot> = {};
+  for (const [key, snap] of Object.entries(store.periods || {})) {
+    if (!snap || typeof snap !== 'object') continue;
+
+    const seenTxIds = new Set<string>();
+    const nextLancamentos: Transaction[] = [];
+    for (const tx of Array.isArray(snap.lancamentos) ? snap.lancamentos : []) {
+      const id =
+        tx.id && String(tx.id).trim()
+          ? String(tx.id).trim()
+          : computeDeterministicTransactionId({
+              data: tx.data,
+              descricao: tx.descricao,
+              valor: tx.valor,
+              tipo: tx.tipo,
+              cartaoNome: tx.cartaoNome,
+              formaPagamento: tx.formaPagamento,
+            });
+      if (seenTxIds.has(id)) {
+        changed = true;
+        continue;
+      }
+      seenTxIds.add(id);
+      const updatedAt = tx.updatedAt || migrationIso;
+      if (id !== tx.id || updatedAt !== tx.updatedAt) changed = true;
+      nextLancamentos.push({ ...tx, id, updatedAt });
+    }
+
+    const nextBancos: BankAccount[] = (
+      Array.isArray(snap.bancos) ? snap.bancos : []
+    ).map((bank) => {
+      const id = bank.id || generateId('bank');
+      const updatedAt = bank.updatedAt || migrationIso;
+      if (id !== bank.id || updatedAt !== bank.updatedAt) changed = true;
+      return { ...bank, id, updatedAt };
+    });
+
+    nextPeriods[key] = {
+      ...snap,
+      lancamentos: nextLancamentos,
+      bancos: nextBancos,
+      metas: snap.metas || {},
+    };
+  }
+
+  return {
+    store: changed
+      ? {
+          ...store,
+          version: store.version || '3.10',
+          periods: nextPeriods,
+          categorias: nextCategories,
+          cartoes: nextCartoes,
+        }
+      : store,
+    changed,
+  };
+}
+
 export function buildPeriodExportPayload(
   snapshot: PeriodSnapshot,
   categorias: CategoryConfig[] = [],
   cartoes: CreditCardConfig[] = [],
 ): PeriodExportPayload {
+  const exportedAt = new Date().toISOString();
   return {
     schemaVersion: '1.0',
+    appVersion: '3.10',
+    exportType: 'period',
+    exportedAt,
     periodo: snapshot.periodoKey,
-    exportadoEm: new Date().toISOString(),
-    transacoes: snapshot.lancamentos,
-    bancos: snapshot.bancos,
-    categorias,
-    cartoes,
+    exportadoEm: exportedAt,
+    transacoes: snapshot.lancamentos.map((tx) => ({
+      ...tx,
+      id:
+        tx.id ||
+        computeDeterministicTransactionId({
+          data: tx.data,
+          descricao: tx.descricao,
+          valor: tx.valor,
+          tipo: tx.tipo,
+          cartaoNome: tx.cartaoNome,
+          formaPagamento: tx.formaPagamento,
+        }),
+      updatedAt: tx.updatedAt || exportedAt,
+    })),
+    bancos: snapshot.bancos.map((b) => ({
+      ...b,
+      id: b.id || generateId('bank'),
+      updatedAt: b.updatedAt || exportedAt,
+    })),
+    categorias: categorias.map((c) => ({
+      ...c,
+      id: c.id || generateId('cat'),
+      updatedAt: c.updatedAt || exportedAt,
+    })),
+    cartoes: cartoes.map((c) => ({
+      ...c,
+      id: c.id || generateId('cc'),
+      updatedAt: c.updatedAt || exportedAt,
+    })),
     metas: snapshot.metas,
+  };
+}
+
+export function buildFullBackupExportPayload(
+  store: FinanceStore,
+): FullBackupExportPayload {
+  const exportedAt = new Date().toISOString();
+  const normalized = normalizeAndMigrateStore(store, exportedAt).store;
+
+  const exportedPeriods: Record<string, PeriodSnapshot> = {};
+  for (const [key, snap] of Object.entries(normalized.periods)) {
+    exportedPeriods[key] = {
+      ...snap,
+      lancamentos: snap.lancamentos.map((tx) => ({ ...tx })),
+      bancos: snap.bancos.map((b) => ({ ...b })),
+      metas: { ...(snap.metas || {}) },
+    };
+  }
+
+  return {
+    schemaVersion: '2.0',
+    appVersion: '3.10',
+    exportType: 'full',
+    exportedAt,
+    exportadoEm: exportedAt,
+    activeAno: normalized.activeAno,
+    activeMes: normalized.activeMes,
+    periods: exportedPeriods,
+    categorias: normalized.categorias.map((c) => ({
+      ...c,
+      subcategorias: [...c.subcategorias],
+    })),
+    titulares: [...normalized.titulares],
+    formasPagamento: [...normalized.formasPagamento],
+    cartoes: normalized.cartoes.map((c) => ({ ...c })),
   };
 }
 
@@ -549,27 +711,37 @@ export interface ImportSummaryResult {
   nextStore: FinanceStore;
   importedPeriods: string[];
   importedTransactionsCount: number;
+  addedCount: number;
+  updatedCount: number;
+  ignoredCount: number;
   errors: string[];
 }
 
 interface LegacyOrStandardImportPayload {
   schemaVersion?: string;
+  appVersion?: string;
   version?: string;
+  exportType?: 'full' | 'period' | string;
   periodo?: string;
   exportadoEm?: string;
   exportedAt?: string;
   ano?: number;
   mes?: number;
-  transacoes?: Transaction[];
-  lancamentos?: Transaction[];
+  activeAno?: number;
+  activeMes?: number;
+  periods?: Record<string, PeriodSnapshot>;
+  transacoes?: Array<Transaction & { banco?: string }>;
+  lancamentos?: Array<Transaction & { banco?: string }>;
   bancos?: BankAccount[];
   categorias?: CategoryConfig[];
+  titulares?: string[];
+  formasPagamento?: string[];
   cartoes?: CreditCardConfig[];
   metas?: PeriodSnapshot['metas'];
 }
 
 function parsePeriodoField(
-  parsed: LegacyOrStandardImportPayload,
+  parsed: Pick<LegacyOrStandardImportPayload, 'periodo' | 'ano' | 'mes'>,
 ): { ano: number; mes: number; isValid: boolean } {
   if (typeof parsed.periodo === 'string') {
     const m = /^(\d{4})-(\d{2})$/.exec(parsed.periodo.trim());
@@ -592,39 +764,461 @@ function parsePeriodoField(
   return { ano: 2026, mes: 1, isValid: false };
 }
 
+function mergeCategoryList(
+  targetCategories: CategoryConfig[],
+  incomingCategories: CategoryConfig[] | undefined,
+): void {
+  if (!Array.isArray(incomingCategories)) return;
+
+  for (const impCat of incomingCategories) {
+    if (!impCat || typeof impCat.nome !== 'string') continue;
+    const catTipo: TransactionType = impCat.tipo === 'RECEITA' ? 'RECEITA' : 'DESPESA';
+    const catName = impCat.nome.trim();
+    if (!catName) continue;
+
+    const subs = Array.isArray(impCat.subcategorias)
+      ? impCat.subcategorias.map((s) => String(s).trim()).filter(Boolean)
+      : [];
+
+    const existingCat = targetCategories.find(
+      (c) =>
+        (impCat.id && c.id === impCat.id) ||
+        (c.nome.toUpperCase() === catName.toUpperCase() && c.tipo === catTipo),
+    );
+
+    if (!existingCat) {
+      const uniqueSubs: string[] = [];
+      const seenSubNorm = new Set<string>();
+      for (const s of subs) {
+        const norm = s.toLowerCase();
+        if (!seenSubNorm.has(norm)) {
+          seenSubNorm.add(norm);
+          uniqueSubs.push(s);
+        }
+      }
+      targetCategories.push({
+        id: impCat.id || generateId('cat'),
+        updatedAt: impCat.updatedAt || new Date().toISOString(),
+        nome: catName,
+        tipo: catTipo,
+        subcategorias: uniqueSubs.length > 0 ? uniqueSubs : ['Outros'],
+      });
+    } else {
+      const existingSubNorm = new Set(
+        existingCat.subcategorias.map((s) => s.trim().toLowerCase()),
+      );
+      for (const sub of subs) {
+        if (!existingSubNorm.has(sub.toLowerCase())) {
+          existingSubNorm.add(sub.toLowerCase());
+          existingCat.subcategorias.push(sub);
+        }
+      }
+      const impTs = toTimestampMs(impCat.updatedAt);
+      const curTs = toTimestampMs(existingCat.updatedAt);
+      if (impTs > curTs && impCat.updatedAt) {
+        existingCat.updatedAt = impCat.updatedAt;
+      }
+    }
+  }
+}
+
+function mergeCreditCardList(
+  targetCartoes: CreditCardConfig[],
+  incomingCartoes: CreditCardConfig[] | undefined,
+): void {
+  if (!Array.isArray(incomingCartoes)) return;
+
+  for (const impCard of incomingCartoes) {
+    if (!impCard || typeof impCard.nome !== 'string') continue;
+    const cleanName = impCard.nome.trim();
+    if (!cleanName) continue;
+    const dueDay = Math.min(
+      Math.max(Math.round(Number(impCard.diaVencimento) || 10), 1),
+      31,
+    );
+    const existingCard = targetCartoes.find(
+      (c) =>
+        (impCard.id && c.id === impCard.id) ||
+        c.nome.toLowerCase() === cleanName.toLowerCase(),
+    );
+    if (!existingCard) {
+      targetCartoes.push({
+        id: impCard.id || generateId('cc'),
+        updatedAt: impCard.updatedAt || new Date().toISOString(),
+        nome: cleanName,
+        diaVencimento: dueDay,
+      });
+    } else {
+      const impTs = toTimestampMs(impCard.updatedAt);
+      const curTs = toTimestampMs(existingCard.updatedAt);
+      if (impTs > curTs || (!existingCard.updatedAt && !impCard.updatedAt)) {
+        existingCard.nome = cleanName;
+        existingCard.diaVencimento = dueDay;
+        if (impCard.updatedAt) existingCard.updatedAt = impCard.updatedAt;
+      }
+    }
+  }
+}
+
+function mergeBanksSnapshot(
+  existingBanks: BankAccount[] | undefined,
+  incomingBanks: BankAccount[] | undefined,
+): BankAccount[] {
+  const result: BankAccount[] = (existingBanks || []).map((b) => ({ ...b }));
+  if (!Array.isArray(incomingBanks) || incomingBanks.length === 0) {
+    return result.length > 0 ? result : DEFAULT_BANKS.map((b) => ({ ...b }));
+  }
+
+  for (const imp of incomingBanks) {
+    if (!imp || typeof imp.nome !== 'string') continue;
+    const cleanName = imp.nome.trim() || 'Banco';
+    const existingIdx = result.findIndex(
+      (b) =>
+        (imp.id && b.id === imp.id) ||
+        b.nome.trim().toLowerCase() === cleanName.toLowerCase(),
+    );
+
+    const sanitizedImp: BankAccount = {
+      id: imp.id || generateId('bank'),
+      updatedAt: imp.updatedAt,
+      nome: cleanName,
+      saldoConta: Number(imp.saldoConta) || 0,
+      descontoComprometido: Number(imp.descontoComprometido) || 0,
+      caixinhaCofrinho: Number(imp.caixinhaCofrinho) || 0,
+      investimentos: Number(imp.investimentos) || 0,
+      criptomoedas: Number(imp.criptomoedas) || 0,
+      faturaCC: Number(imp.faturaCC) || 0,
+      dividendosRecebidos: Number(imp.dividendosRecebidos) || 0,
+    };
+
+    if (existingIdx === -1) {
+      result.push({
+        ...sanitizedImp,
+        updatedAt: sanitizedImp.updatedAt || new Date().toISOString(),
+      });
+    } else {
+      const existingBank = result[existingIdx];
+      const impTs = toTimestampMs(sanitizedImp.updatedAt);
+      const curTs = toTimestampMs(existingBank.updatedAt);
+      if (impTs > curTs) {
+        result[existingIdx] = {
+          ...sanitizedImp,
+          id: existingBank.id,
+        };
+      }
+    }
+  }
+
+  return result;
+}
+
 /**
- * Parses one or multiple JSON file payloads (from single or multi-file import)
- * and consolidates them into the FinanceStore without duplicating transactions (by id)
- * or bank snapshots (by YYYY-MM period).
+ * Parses one or multiple JSON file payloads (single-period exports, legacy files,
+ * or full multi-period backups) and performs smart ID + updatedAt merge into the
+ * FinanceStore without duplicating transactions, banks, categories, or cards.
  */
 export function parseAndMergeImportedPayloads(
   currentStore: FinanceStore,
   rawFiles: Array<{ name: string; content: string }>,
 ): ImportSummaryResult {
-  const nextPeriods: Record<string, PeriodSnapshot> = { ...currentStore.periods };
+  const nowIso = new Date().toISOString();
+  const nextPeriods: Record<string, PeriodSnapshot> = {};
+  const globalTxPeriodById = new Map<string, string>();
+
+  for (const [pKey, snap] of Object.entries(currentStore.periods)) {
+    const clonedTxs = (snap.lancamentos || []).map((t) => {
+      const txId =
+        t.id && String(t.id).trim()
+          ? String(t.id).trim()
+          : computeDeterministicTransactionId({
+              data: t.data,
+              descricao: t.descricao,
+              valor: t.valor,
+              tipo: t.tipo,
+              cartaoNome: t.cartaoNome,
+              formaPagamento: t.formaPagamento,
+            });
+      globalTxPeriodById.set(txId, pKey);
+      return { ...t, id: txId };
+    });
+
+    nextPeriods[pKey] = {
+      ...snap,
+      lancamentos: clonedTxs,
+      bancos: (snap.bancos || []).map((b) => ({ ...b })),
+      metas: { ...(snap.metas || {}) },
+    };
+  }
+
   const importedPeriodsSet = new Set<string>();
   let importedTransactionsCount = 0;
+  let addedCount = 0;
+  let updatedCount = 0;
+  let ignoredCount = 0;
   const errors: string[] = [];
 
   const nextCategories = currentStore.categorias.map((c) => ({
     ...c,
     subcategorias: [...c.subcategorias],
   }));
-  const nextTitulares = new Set(currentStore.titulares);
-  const nextFormas = new Set(currentStore.formasPagamento);
+
+  const nextTitularesMap = new Map<string, string>();
+  for (const t of currentStore.titulares) {
+    const clean = t.trim();
+    if (clean) nextTitularesMap.set(clean.toLowerCase(), clean);
+  }
+  const nextFormasMap = new Map<string, string>();
+  for (const f of currentStore.formasPagamento) {
+    const clean = f.trim();
+    if (clean) nextFormasMap.set(clean.toLowerCase(), clean);
+  }
+
+  const addTitularUnique = (name?: string) => {
+    const clean = String(name || '').trim();
+    if (clean && !nextTitularesMap.has(clean.toLowerCase())) {
+      nextTitularesMap.set(clean.toLowerCase(), clean);
+    }
+  };
+  const addFormaUnique = (name?: string) => {
+    const clean = String(name || '').trim();
+    if (clean && !nextFormasMap.has(clean.toLowerCase())) {
+      nextFormasMap.set(clean.toLowerCase(), clean);
+    }
+  };
+
   const baseCartoes = Array.isArray(currentStore.cartoes)
     ? currentStore.cartoes
     : DEFAULT_CREDIT_CARDS;
   const nextCartoes: CreditCardConfig[] = baseCartoes.map((c) => ({ ...c }));
 
+  const mergeSinglePeriodChunk = (chunk: {
+    ano: number;
+    mes: number;
+    rawTransactions: Array<Transaction & { banco?: string }>;
+    bancos?: BankAccount[];
+    metas?: PeriodSnapshot['metas'];
+  }) => {
+    const { ano, mes, rawTransactions } = chunk;
+    const chunkPeriodoKey = getPeriodKey(ano, mes);
+    importedPeriodsSet.add(chunkPeriodoKey);
+
+    if (!nextPeriods[chunkPeriodoKey]) {
+      nextPeriods[chunkPeriodoKey] = {
+        periodoKey: chunkPeriodoKey,
+        ano,
+        mes,
+        lancamentos: [],
+        bancos: mergeBanksSnapshot(undefined, chunk.bancos),
+        metas: chunk.metas ? { ...chunk.metas } : {},
+      };
+    } else {
+      nextPeriods[chunkPeriodoKey] = {
+        ...nextPeriods[chunkPeriodoKey],
+        bancos: mergeBanksSnapshot(nextPeriods[chunkPeriodoKey].bancos, chunk.bancos),
+        metas: chunk.metas
+          ? { ...nextPeriods[chunkPeriodoKey].metas, ...chunk.metas }
+          : nextPeriods[chunkPeriodoKey].metas,
+      };
+    }
+
+    for (const rawTx of rawTransactions) {
+      if (!rawTx || typeof rawTx !== 'object') continue;
+
+      const parsedDate = parseBRDate(rawTx.data || '');
+      const txMes = parsedDate.isValid ? parsedDate.mes : rawTx.mes || mes;
+      const txAno = parsedDate.isValid ? parsedDate.ano : rawTx.ano || ano;
+      const tipo: TransactionType = rawTx.tipo === 'RECEITA' ? 'RECEITA' : 'DESPESA';
+      const catName = String(rawTx.categoria || 'OUTROS').trim();
+      const descName = String(rawTx.descricao || 'Outros').trim();
+      const titularName = String(rawTx.titular || 'ezequiel').trim();
+      const formaName = String(rawTx.formaPagamento || 'PIXD').trim();
+      const valorNum = Number(rawTx.valor) || 0;
+      const formattedData =
+        rawTx.data && String(rawTx.data).trim()
+          ? String(rawTx.data).trim()
+          : `01/${String(txMes).padStart(2, '0')}/${txAno}`;
+
+      let catObj = nextCategories.find(
+        (c) => c.nome.toUpperCase() === catName.toUpperCase() && c.tipo === tipo,
+      );
+      if (!catObj) {
+        catObj = {
+          id: generateId('cat'),
+          updatedAt: nowIso,
+          nome: catName,
+          tipo,
+          subcategorias: [descName],
+        };
+        nextCategories.push(catObj);
+      } else if (
+        descName &&
+        !catObj.subcategorias.some((s) => s.toLowerCase() === descName.toLowerCase())
+      ) {
+        catObj.subcategorias.push(descName);
+      }
+
+      addTitularUnique(titularName);
+      addFormaUnique(formaName);
+
+      const hasExplicitId = Boolean(rawTx.id && String(rawTx.id).trim());
+      const resolvedId = hasExplicitId
+        ? String(rawTx.id).trim()
+        : computeDeterministicTransactionId({
+            data: formattedData,
+            descricao: descName,
+            valor: valorNum,
+            tipo,
+            banco: rawTx.banco,
+            cartaoNome: rawTx.cartaoNome,
+            formaPagamento: formaName,
+          });
+
+      const incomingTs = toTimestampMs(rawTx.updatedAt);
+      const hasIncomingUpdatedAt = incomingTs > 0;
+
+      const normalizedIncoming: Transaction = {
+        id: resolvedId,
+        updatedAt: hasIncomingUpdatedAt ? String(rawTx.updatedAt) : nowIso,
+        data: formattedData,
+        mes: txMes,
+        ano: txAno,
+        tipo,
+        categoria: catObj.nome,
+        descricao: descName,
+        valor: valorNum,
+        obs: String(rawTx.obs || ''),
+        formaPagamento: formaName,
+        titular: titularName,
+        ...(rawTx.cartaoId ? { cartaoId: String(rawTx.cartaoId) } : {}),
+        ...(rawTx.cartaoNome ? { cartaoNome: String(rawTx.cartaoNome) } : {}),
+        ...(typeof rawTx.parcelaAtual === 'number' ? { parcelaAtual: rawTx.parcelaAtual } : {}),
+        ...(typeof rawTx.totalParcelas === 'number' ? { totalParcelas: rawTx.totalParcelas } : {}),
+        ...(rawTx.parcelamentoGrupoId
+          ? { parcelamentoGrupoId: String(rawTx.parcelamentoGrupoId) }
+          : {}),
+      };
+
+      const targetKey = getPeriodKey(txAno, txMes);
+      importedPeriodsSet.add(targetKey);
+      importedTransactionsCount += 1;
+
+      if (!nextPeriods[targetKey]) {
+        nextPeriods[targetKey] = {
+          periodoKey: targetKey,
+          ano: txAno,
+          mes: txMes,
+          lancamentos: [],
+          bancos: mergeBanksSnapshot(undefined, chunk.bancos),
+          metas: {},
+        };
+      }
+
+      const existingPeriodKey = globalTxPeriodById.get(resolvedId);
+      if (!existingPeriodKey) {
+        nextPeriods[targetKey].lancamentos.push(normalizedIncoming);
+        globalTxPeriodById.set(resolvedId, targetKey);
+        addedCount += 1;
+        continue;
+      }
+
+      const existingBucket = nextPeriods[existingPeriodKey];
+      const existingTx = existingBucket?.lancamentos.find((t) => t.id === resolvedId);
+      if (!existingTx) {
+        nextPeriods[targetKey].lancamentos.push(normalizedIncoming);
+        globalTxPeriodById.set(resolvedId, targetKey);
+        addedCount += 1;
+        continue;
+      }
+
+      const existingTs = toTimestampMs(existingTx.updatedAt);
+
+      // Keep existing if incoming lacks updatedAt or is older/same timestamp
+      if (!hasIncomingUpdatedAt || incomingTs <= existingTs) {
+        ignoredCount += 1;
+        continue;
+      }
+
+      // Incoming has strictly newer updatedAt -> update (and move period if changed)
+      if (existingPeriodKey === targetKey) {
+        nextPeriods[targetKey] = {
+          ...nextPeriods[targetKey],
+          lancamentos: nextPeriods[targetKey].lancamentos.map((t) =>
+            t.id === resolvedId ? normalizedIncoming : t,
+          ),
+        };
+      } else {
+        nextPeriods[existingPeriodKey] = {
+          ...nextPeriods[existingPeriodKey],
+          lancamentos: nextPeriods[existingPeriodKey].lancamentos.filter(
+            (t) => t.id !== resolvedId,
+          ),
+        };
+        nextPeriods[targetKey] = {
+          ...nextPeriods[targetKey],
+          lancamentos: [...nextPeriods[targetKey].lancamentos, normalizedIncoming],
+        };
+        globalTxPeriodById.set(resolvedId, targetKey);
+      }
+      updatedCount += 1;
+    }
+  };
+
   for (const file of rawFiles) {
     try {
       const parsed = JSON.parse(file.content) as LegacyOrStandardImportPayload;
       if (typeof parsed !== 'object' || parsed === null) {
-        errors.push(`Arquivo "${file.name}" não possui o formato válido do Gestor Financeiro.`);
+        errors.push(
+          `Arquivo "${file.name}" não possui o formato válido do Gestor Financeiro.`,
+        );
         continue;
       }
 
+      // Merge top-level auxiliary lists first
+      mergeCategoryList(nextCategories, parsed.categorias);
+      mergeCreditCardList(nextCartoes, parsed.cartoes);
+      if (Array.isArray(parsed.titulares)) {
+        for (const t of parsed.titulares) addTitularUnique(t);
+      }
+      if (Array.isArray(parsed.formasPagamento)) {
+        for (const f of parsed.formasPagamento) addFormaUnique(f);
+      }
+
+      // Case 1: Full backup payload (exportType === 'full' or periods dictionary)
+      if (
+        (parsed.exportType === 'full' || (parsed.periods && typeof parsed.periods === 'object')) &&
+        parsed.periods &&
+        !Array.isArray(parsed.periods)
+      ) {
+        const periodEntries = Object.entries(parsed.periods);
+        if (periodEntries.length === 0) {
+          errors.push(`Backup "${file.name}" não contém períodos válidos.`);
+          continue;
+        }
+
+        for (const [rawKey, snap] of periodEntries) {
+          if (!snap || typeof snap !== 'object') continue;
+          const periodInfo = parsePeriodoField({
+            periodo: snap.periodoKey || rawKey,
+            ano: snap.ano,
+            mes: snap.mes,
+          });
+          if (!periodInfo.isValid) continue;
+
+          const rawTxs = Array.isArray(snap.lancamentos)
+            ? snap.lancamentos
+            : [];
+          mergeSinglePeriodChunk({
+            ano: periodInfo.ano,
+            mes: periodInfo.mes,
+            rawTransactions: rawTxs,
+            bancos: snap.bancos,
+            metas: snap.metas,
+          });
+        }
+        continue;
+      }
+
+      // Case 2: Single period export (standard or legacy)
       const periodInfo = parsePeriodoField(parsed);
       const rawTransactions = Array.isArray(parsed.transacoes)
         ? parsed.transacoes
@@ -633,178 +1227,25 @@ export function parseAndMergeImportedPayloads(
           : null;
 
       if (!periodInfo.isValid || rawTransactions === null) {
-        errors.push(`Arquivo "${file.name}" não possui o formato válido do Gestor Financeiro.`);
+        errors.push(
+          `Arquivo "${file.name}" não possui o formato válido do Gestor Financeiro.`,
+        );
         continue;
       }
 
-      const { ano, mes } = periodInfo;
-      const periodoKey = getPeriodKey(ano, mes);
-
-      // Merge imported categorias block without duplicating categories or subcategories
-      if (Array.isArray(parsed.categorias)) {
-        for (const impCat of parsed.categorias) {
-          if (!impCat || typeof impCat.nome !== 'string') continue;
-          const catTipo: TransactionType = impCat.tipo === 'RECEITA' ? 'RECEITA' : 'DESPESA';
-          const catName = impCat.nome.trim();
-          const subs = Array.isArray(impCat.subcategorias)
-            ? impCat.subcategorias.map((s) => String(s).trim()).filter(Boolean)
-            : [];
-
-          let existingCat = nextCategories.find(
-            (c) => c.nome.toUpperCase() === catName.toUpperCase() && c.tipo === catTipo,
-          );
-          if (!existingCat) {
-            existingCat = {
-              id: impCat.id || generateId('cat'),
-              nome: catName,
-              tipo: catTipo,
-              subcategorias: subs.length > 0 ? Array.from(new Set(subs)) : ['Outros'],
-            };
-            nextCategories.push(existingCat);
-          } else {
-            for (const sub of subs) {
-              if (!existingCat.subcategorias.includes(sub)) {
-                existingCat.subcategorias.push(sub);
-              }
-            }
-          }
-        }
-      }
-
-      // Merge imported cartoes block without duplicating by id or normalized name
-      if (Array.isArray(parsed.cartoes)) {
-        for (const impCard of parsed.cartoes) {
-          if (!impCard || typeof impCard.nome !== 'string') continue;
-          const cleanName = impCard.nome.trim();
-          if (!cleanName) continue;
-          const dueDay = Math.min(
-            Math.max(Math.round(Number(impCard.diaVencimento) || 10), 1),
-            31,
-          );
-          const existingCard = nextCartoes.find(
-            (c) =>
-              (impCard.id && c.id === impCard.id) ||
-              c.nome.toLowerCase() === cleanName.toLowerCase(),
-          );
-          if (!existingCard) {
-            nextCartoes.push({
-              id: impCard.id || generateId('cc'),
-              nome: cleanName,
-              diaVencimento: dueDay,
-            });
-          } else {
-            existingCard.nome = cleanName;
-            existingCard.diaVencimento = dueDay;
-          }
-        }
-      }
-
-      const sanitizedLancamentos: Transaction[] = rawTransactions.map((tx) => {
-        const parsedDate = parseBRDate(tx.data || '');
-        const txMes = parsedDate.isValid ? parsedDate.mes : tx.mes || mes;
-        const txAno = parsedDate.isValid ? parsedDate.ano : tx.ano || ano;
-        const tipo: TransactionType = tx.tipo === 'RECEITA' ? 'RECEITA' : 'DESPESA';
-        const catName = String(tx.categoria || 'OUTROS').trim();
-        const descName = String(tx.descricao || 'Outros').trim();
-        const titularName = String(tx.titular || 'ezequiel').trim();
-        const formaName = String(tx.formaPagamento || 'PIXD').trim();
-
-        let catObj = nextCategories.find(
-          (c) => c.nome.toUpperCase() === catName.toUpperCase() && c.tipo === tipo,
-        );
-        if (!catObj) {
-          catObj = {
-            id: generateId('cat'),
-            nome: catName,
-            tipo,
-            subcategorias: [descName],
-          };
-          nextCategories.push(catObj);
-        } else if (descName && !catObj.subcategorias.includes(descName)) {
-          catObj.subcategorias.push(descName);
-        }
-
-        if (titularName) nextTitulares.add(titularName);
-        if (formaName) nextFormas.add(formaName);
-
-        const baseTx: Transaction = {
-          id: tx.id || generateId('tx'),
-          data: tx.data || `01/${String(txMes).padStart(2, '0')}/${txAno}`,
-          mes: txMes,
-          ano: txAno,
-          tipo,
-          categoria: catObj.nome,
-          descricao: descName,
-          valor: Number(tx.valor) || 0,
-          obs: String(tx.obs || ''),
-          formaPagamento: formaName,
-          titular: titularName,
-        };
-
-        if (tx.cartaoId) baseTx.cartaoId = String(tx.cartaoId);
-        if (tx.cartaoNome) baseTx.cartaoNome = String(tx.cartaoNome);
-        if (typeof tx.parcelaAtual === 'number') baseTx.parcelaAtual = tx.parcelaAtual;
-        if (typeof tx.totalParcelas === 'number') baseTx.totalParcelas = tx.totalParcelas;
-        if (tx.parcelamentoGrupoId) {
-          baseTx.parcelamentoGrupoId = String(tx.parcelamentoGrupoId);
-        }
-
-        return baseTx;
+      mergeSinglePeriodChunk({
+        ano: periodInfo.ano,
+        mes: periodInfo.mes,
+        rawTransactions,
+        bancos: parsed.bancos,
+        metas: parsed.metas,
       });
-
-      const existing = nextPeriods[periodoKey];
-      // Always deduplicate transactions by unique `id` across existing and incoming
-      const mergedMap = new Map<string, Transaction>();
-      if (existing) {
-        for (const t of existing.lancamentos) {
-          mergedMap.set(t.id, t);
-        }
-      }
-      for (const t of sanitizedLancamentos) {
-        mergedMap.set(t.id, t);
-      }
-
-      // Deduplicate bank snapshot per period YYYY-MM (by id / normalized name)
-      let incomingBanks: BankAccount[];
-      if (Array.isArray(parsed.bancos) && parsed.bancos.length > 0) {
-        const bankByKey = new Map<string, BankAccount>();
-        for (const b of parsed.bancos) {
-          const cleanName = String(b.nome || 'Banco').trim();
-          const dedupKey = b.id || cleanName.toLowerCase();
-          bankByKey.set(dedupKey, {
-            id: b.id || generateId('bank'),
-            nome: cleanName,
-            saldoConta: Number(b.saldoConta) || 0,
-            descontoComprometido: Number(b.descontoComprometido) || 0,
-            caixinhaCofrinho: Number(b.caixinhaCofrinho) || 0,
-            investimentos: Number(b.investimentos) || 0,
-            criptomoedas: Number(b.criptomoedas) || 0,
-            faturaCC: Number(b.faturaCC) || 0,
-            dividendosRecebidos: Number(b.dividendosRecebidos) || 0,
-          });
-        }
-        incomingBanks = Array.from(bankByKey.values());
-      } else {
-        incomingBanks = existing?.bancos || DEFAULT_BANKS;
-      }
-
-      nextPeriods[periodoKey] = {
-        periodoKey,
-        ano,
-        mes,
-        lancamentos: Array.from(mergedMap.values()),
-        bancos: incomingBanks,
-        metas: parsed.metas || existing?.metas || {},
-      };
-
-      importedPeriodsSet.add(periodoKey);
-      importedTransactionsCount += sanitizedLancamentos.length;
     } catch {
       errors.push(`Erro ao ler JSON de "${file.name}".`);
     }
   }
 
-  const importedPeriods = Array.from(importedPeriodsSet);
+  const importedPeriods = Array.from(importedPeriodsSet).sort();
   let activeAno = currentStore.activeAno;
   let activeMes = currentStore.activeMes;
   if (importedPeriods.length === 1) {
@@ -822,12 +1263,15 @@ export function parseAndMergeImportedPayloads(
       activeMes,
       periods: nextPeriods,
       categorias: nextCategories,
-      titulares: Array.from(nextTitulares),
-      formasPagamento: Array.from(nextFormas),
+      titulares: Array.from(nextTitularesMap.values()),
+      formasPagamento: Array.from(nextFormasMap.values()),
       cartoes: nextCartoes,
     },
     importedPeriods,
     importedTransactionsCount,
+    addedCount,
+    updatedCount,
+    ignoredCount,
     errors,
   };
 }
@@ -1097,6 +1541,7 @@ export function addTransactionsBatchToStore(
   if (items.length === 0) return store;
 
   const nextPeriods = { ...store.periods };
+  const nowIso = new Date().toISOString();
 
   // Insert in reverse so items[0] ends up ahead in chronological/creation order when prepending,
   // or prepend per period in order. Grouping by period and prepending preserves installment order.
@@ -1104,7 +1549,7 @@ export function addTransactionsBatchToStore(
   for (const item of items) {
     const key = getPeriodKey(item.ano, item.mes);
     const existingList = byPeriod.get(key) || [];
-    existingList.push({ ...item, id: generateId('tx') });
+    existingList.push({ ...item, id: generateId('tx'), updatedAt: nowIso });
     byPeriod.set(key, existingList);
   }
 
