@@ -6,16 +6,19 @@ import {
   buildPeriodExportPayload,
   clampDayToMonth,
   clearStoreTransactions,
+  collectAllPeriodTransactions,
   computeAnnualPivot,
   computeBankHistory,
   computeBankMetrics,
   computeConsolidatedBanks,
   computeCumulativeAndFutureOverview,
   computeDashboardSummary,
+  deleteTransactionFromStore,
   filterTransactions,
   getDefaultFirstInstallmentStart,
   parseAndMergeImportedPayloads,
   resetStoreForFreshStart,
+  saveTransactionInStore,
   splitAmountIntoInstallments,
 } from './calculations';
 import {
@@ -789,6 +792,94 @@ test('THEME_OPTIONS preserves the 5 existing themes and includes all new vibrant
   }
   assert.equal(isValidThemeId('unknown-theme'), false);
 });
+
+test('collectAllPeriodTransactions, accent-insensitive filterTransactions, and cross-period edit/delete work seamlessly', () => {
+  let store = createInitialFinanceStore();
+  store.activeAno = 2026;
+  store.activeMes = 11;
+
+  store = saveTransactionInStore(store, {
+    data: '10/10/2026',
+    mes: 10,
+    ano: 2026,
+    tipo: 'DESPESA',
+    categoria: 'HIGIENE',
+    descricao: 'Farmácia Higiene',
+    valor: 89.5,
+    obs: 'Droga Raia',
+    formaPagamento: 'CC',
+    cartaoId: 'cc_nubank',
+    cartaoNome: 'Nubank',
+    titular: 'ezequiel',
+  }).nextStore;
+
+  store = saveTransactionInStore(store, {
+    data: '05/11/2026',
+    mes: 11,
+    ano: 2026,
+    tipo: 'RECEITA',
+    categoria: 'RECEITAS',
+    descricao: 'Salário',
+    valor: 5000,
+    obs: 'Empresa',
+    formaPagamento: 'PIXR',
+    titular: 'ezequiel',
+  }).nextStore;
+
+  store = saveTransactionInStore(store, {
+    data: '15/12/2026',
+    mes: 12,
+    ano: 2026,
+    tipo: 'DESPESA',
+    categoria: 'SAÚDE',
+    descricao: 'Consultas',
+    valor: 320,
+    obs: 'Clínica São José',
+    formaPagamento: 'PIXD',
+    titular: 'familia',
+  }).nextStore;
+
+  const allTx = collectAllPeriodTransactions(store.periods);
+  assert.equal(allTx.length, 3);
+  assert.deepEqual(
+    allTx.map((t) => `${t.mes}/${t.ano}`),
+    ['12/2026', '11/2026', '10/2026'],
+  );
+
+  // Accent-insensitive and case-insensitive search across all periods
+  assert.equal(filterTransactions(allTx, { search: 'farmacia' }).length, 1);
+  assert.equal(filterTransactions(allTx, { search: 'SALARIO' }).length, 1);
+  assert.equal(filterTransactions(allTx, { search: 'clinica sao jose' }).length, 1);
+  assert.equal(filterTransactions(allTx, { search: 'nubank' }).length, 1);
+  assert.equal(filterTransactions(allTx, { search: 'dez/2026' }).length, 1);
+
+  // Cross-period edit while active period is 11/2026: edit Dec item and move it to Jan/2027
+  const decTx = allTx.find((t) => t.mes === 12)!;
+  const edited = saveTransactionInStore(
+    store,
+    {
+      ...decTx,
+      data: '15/01/2027',
+      mes: 1,
+      ano: 2027,
+      valor: 450,
+    },
+    decTx.id,
+  );
+  store = edited.nextStore;
+  assert.equal(edited.movedFromKey, '2026-12');
+  assert.equal(edited.targetKey, '2027-01');
+  assert.equal(store.periods['2026-12'].lancamentos.length, 0);
+  assert.equal(store.periods['2027-01'].lancamentos.length, 1);
+  assert.equal(store.periods['2027-01'].lancamentos[0].valor, 450);
+
+  // Cross-period delete while active period is still 11/2026: delete Oct item
+  const octTx = collectAllPeriodTransactions(store.periods).find((t) => t.mes === 10)!;
+  store = deleteTransactionFromStore(store, octTx.id);
+  assert.equal(store.periods['2026-10'].lancamentos.length, 0);
+  assert.equal(collectAllPeriodTransactions(store.periods).length, 2);
+});
+
 
 
 

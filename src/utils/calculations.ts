@@ -9,7 +9,7 @@ import type {
   TransactionType,
 } from '../types/finance';
 import { DEFAULT_BANKS, DEFAULT_CREDIT_CARDS } from '../data/defaults';
-import { generateId, getPeriodKey, parseBRDate } from './format';
+import { generateId, getPeriodKey, MONTH_ABBR, parseBRDate } from './format';
 
 export interface CategoryBreakdownItem {
   categoria: string;
@@ -167,11 +167,19 @@ export interface TransactionFilters {
   titular?: string;
 }
 
+export function normalizeSearchText(input: string): string {
+  return input
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 export function filterTransactions(
   transactions: Transaction[],
   filters: TransactionFilters,
 ): Transaction[] {
-  const searchLower = (filters.search || '').trim().toLowerCase();
+  const searchNorm = normalizeSearchText(filters.search || '');
 
   return transactions.filter((tx) => {
     if (filters.tipo && filters.tipo !== 'TODOS' && tx.tipo !== filters.tipo) {
@@ -194,22 +202,123 @@ export function filterTransactions(
     if (
       filters.titular &&
       filters.titular !== 'Todos' &&
-      tx.titular.toLowerCase() !== filters.titular.toLowerCase()
+      normalizeSearchText(tx.titular) !== normalizeSearchText(filters.titular)
     ) {
       return false;
     }
-    if (searchLower) {
+    if (searchNorm) {
       const parcelaInfo =
         tx.parcelaAtual && tx.totalParcelas
           ? `${tx.parcelaAtual}/${tx.totalParcelas}`
           : '';
-      const hay = `${tx.descricao} ${tx.obs} ${tx.categoria} ${tx.titular} ${tx.data} ${tx.cartaoNome || ''} ${parcelaInfo}`.toLowerCase();
-      if (!hay.includes(searchLower)) {
+      const periodTag = `${MONTH_ABBR[tx.mes - 1] || ''}/${tx.ano}`;
+      const hay = normalizeSearchText(
+        `${tx.descricao} ${tx.obs} ${tx.categoria} ${tx.formaPagamento} ${tx.titular} ${tx.data} ${periodTag} ${tx.cartaoNome || ''} ${parcelaInfo}`,
+      );
+      if (!hay.includes(searchNorm)) {
         return false;
       }
     }
     return true;
   });
+}
+
+export function collectAllPeriodTransactions(
+  periods: Record<string, PeriodSnapshot>,
+): Transaction[] {
+  const all: Transaction[] = [];
+  for (const snap of Object.values(periods)) {
+    if (snap && Array.isArray(snap.lancamentos)) {
+      all.push(...snap.lancamentos);
+    }
+  }
+
+  return all.sort((a, b) => {
+    if (a.ano !== b.ano) return b.ano - a.ano;
+    if (a.mes !== b.mes) return b.mes - a.mes;
+    const pa = parseBRDate(a.data);
+    const pb = parseBRDate(b.data);
+    const dayA = pa.isValid ? pa.dia : 0;
+    const dayB = pb.isValid ? pb.dia : 0;
+    return dayB - dayA;
+  });
+}
+
+export function saveTransactionInStore(
+  prev: FinanceStore,
+  txData: Omit<Transaction, 'id'>,
+  existingId?: string,
+): { nextStore: FinanceStore; targetKey: string; movedFromKey: string | null } {
+  const targetKey = getPeriodKey(txData.ano, txData.mes);
+  const nextPeriods = { ...prev.periods };
+  let movedFromKey: string | null = null;
+
+  if (existingId) {
+    for (const [periodKey, snap] of Object.entries(nextPeriods)) {
+      if (
+        periodKey !== targetKey &&
+        snap.lancamentos.some((t) => t.id === existingId)
+      ) {
+        movedFromKey = periodKey;
+        nextPeriods[periodKey] = {
+          ...snap,
+          lancamentos: snap.lancamentos.filter((t) => t.id !== existingId),
+        };
+      }
+    }
+  }
+
+  const targetSnap = getOrCreatePeriodSnapshot(
+    { ...prev, periods: nextPeriods },
+    txData.ano,
+    txData.mes,
+  );
+
+  const nextLancamentos = existingId
+    ? targetSnap.lancamentos.some((t) => t.id === existingId)
+      ? targetSnap.lancamentos.map((t) =>
+          t.id === existingId ? { ...txData, id: existingId } : t,
+        )
+      : [{ ...txData, id: existingId }, ...targetSnap.lancamentos]
+    : [{ ...txData, id: generateId('tx') }, ...targetSnap.lancamentos];
+
+  nextPeriods[targetKey] = {
+    ...targetSnap,
+    lancamentos: nextLancamentos,
+  };
+
+  return {
+    nextStore: {
+      ...prev,
+      periods: nextPeriods,
+    },
+    targetKey,
+    movedFromKey,
+  };
+}
+
+export function deleteTransactionFromStore(
+  prev: FinanceStore,
+  id: string,
+): FinanceStore {
+  let changed = false;
+  const nextPeriods: Record<string, PeriodSnapshot> = { ...prev.periods };
+
+  for (const [periodKey, snap] of Object.entries(nextPeriods)) {
+    if (snap.lancamentos.some((t) => t.id === id)) {
+      changed = true;
+      nextPeriods[periodKey] = {
+        ...snap,
+        lancamentos: snap.lancamentos.filter((t) => t.id !== id),
+      };
+    }
+  }
+
+  if (!changed) return prev;
+  return {
+    ...prev,
+    periods: nextPeriods,
+  };
 }
 
 export interface AnnualSubcategoryRow {

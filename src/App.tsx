@@ -12,9 +12,11 @@ import {
   addTransactionsBatchToStore,
   buildPeriodExportPayload,
   clearStoreTransactions,
+  deleteTransactionFromStore,
   getOrCreatePeriodSnapshot,
   parseAndMergeImportedPayloads,
   resetStoreForFreshStart,
+  saveTransactionInStore,
 } from './utils/calculations';
 import {
   formatExportFilename,
@@ -98,7 +100,7 @@ export default function App() {
     }));
   };
 
-  // Transaction CRUD
+  // Transaction CRUD (works across active or searched periods)
   const handleSaveTransaction = (
     txData: Omit<Transaction, 'id'>,
     existingId?: string,
@@ -106,45 +108,14 @@ export default function App() {
     const targetKey = getPeriodKey(txData.ano, txData.mes);
     const activeKey = getPeriodKey(store.activeAno, store.activeMes);
 
-    setStore((prev) => {
-      const nextPeriods = { ...prev.periods };
+    setStore((prev) => saveTransactionInStore(prev, txData, existingId).nextStore);
 
-      // If editing and the date moved to another period, remove from old period
-      if (existingId && targetKey !== activeKey && nextPeriods[activeKey]) {
-        nextPeriods[activeKey] = {
-          ...nextPeriods[activeKey],
-          lancamentos: nextPeriods[activeKey].lancamentos.filter(
-            (t) => t.id !== existingId,
-          ),
-        };
-      }
-
-      const targetSnap = getOrCreatePeriodSnapshot(
-        { ...prev, periods: nextPeriods },
-        txData.ano,
-        txData.mes,
-      );
-
-      const nextLancamentos = existingId
-        ? targetSnap.lancamentos.some((t) => t.id === existingId)
-          ? targetSnap.lancamentos.map((t) =>
-              t.id === existingId ? { ...txData, id: existingId } : t,
-            )
-          : [{ ...txData, id: existingId }, ...targetSnap.lancamentos]
-        : [{ ...txData, id: generateId('tx') }, ...targetSnap.lancamentos];
-
-      nextPeriods[targetKey] = {
-        ...targetSnap,
-        lancamentos: nextLancamentos,
-      };
-
-      return {
-        ...prev,
-        periods: nextPeriods,
-      };
-    });
-
-    if (targetKey !== activeKey) {
+    if (existingId) {
+      setNotice({
+        kind: 'success',
+        message: `Lançamento atualizado com sucesso em ${formatPeriodLabel(txData.ano, txData.mes)}.`,
+      });
+    } else if (targetKey !== activeKey) {
       setNotice({
         kind: 'success',
         message: `Lançamento registrado automaticamente em ${formatPeriodLabel(txData.ano, txData.mes)} pela data informada.`,
@@ -152,9 +123,7 @@ export default function App() {
     } else {
       setNotice({
         kind: 'success',
-        message: existingId
-          ? 'Lançamento atualizado com sucesso.'
-          : 'Lançamento salvo no Controle.',
+        message: 'Lançamento salvo no Controle.',
       });
     }
   };
@@ -172,20 +141,7 @@ export default function App() {
   };
 
   const handleDeleteTransaction = (id: string) => {
-    const key = getPeriodKey(store.activeAno, store.activeMes);
-    setStore((prev) => {
-      const snap = getOrCreatePeriodSnapshot(prev, prev.activeAno, prev.activeMes);
-      return {
-        ...prev,
-        periods: {
-          ...prev.periods,
-          [key]: {
-            ...snap,
-            lancamentos: snap.lancamentos.filter((t) => t.id !== id),
-          },
-        },
-      };
-    });
+    setStore((prev) => deleteTransactionFromStore(prev, id));
   };
 
   // Bank CRUD
@@ -549,6 +505,7 @@ export default function App() {
             ano={store.activeAno}
             mes={store.activeMes}
             transactions={activePeriod.lancamentos}
+            periods={store.periods}
             categories={store.categorias}
             titulares={store.titulares}
             formasPagamento={store.formasPagamento}

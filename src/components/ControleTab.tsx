@@ -1,12 +1,21 @@
 import React, { useMemo, useState } from 'react';
-import { Check, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
-import type { CategoryConfig, Transaction, TransactionType } from '../types/finance';
-import { filterTransactions } from '../utils/calculations';
+import { Calendar, Check, Globe, Pencil, Plus, Search, Trash2, X } from 'lucide-react';
+import type {
+  CategoryConfig,
+  PeriodSnapshot,
+  Transaction,
+  TransactionType,
+} from '../types/finance';
+import {
+  collectAllPeriodTransactions,
+  filterTransactions,
+} from '../utils/calculations';
 import {
   formatBRL,
   formatPeriodLabel,
   getDefaultDateForPeriod,
   maskBRDateInput,
+  MONTH_ABBR,
   parseBRDate,
 } from '../utils/format';
 import { CurrencyInput } from './CurrencyInput';
@@ -15,6 +24,7 @@ interface ControleTabProps {
   ano: number;
   mes: number;
   transactions: Transaction[];
+  periods: Record<string, PeriodSnapshot>;
   categories: CategoryConfig[];
   titulares: string[];
   formasPagamento: string[];
@@ -28,6 +38,7 @@ export const ControleTab: React.FC<ControleTabProps> = ({
   ano,
   mes,
   transactions,
+  periods,
   categories,
   titulares,
   formasPagamento,
@@ -38,6 +49,7 @@ export const ControleTab: React.FC<ControleTabProps> = ({
 }) => {
   // Filters
   const [search, setSearch] = useState('');
+  const [searchScope, setSearchScope] = useState<'active' | 'all'>('active');
   const [filterTipo, setFilterTipo] = useState<'TODOS' | TransactionType>('TODOS');
   const [filterCategoria, setFilterCategoria] = useState('TODAS');
   const [filterForma, setFilterForma] = useState('TODAS');
@@ -172,16 +184,35 @@ export const ControleTab: React.FC<ControleTabProps> = ({
     setEditDraft(null);
   };
 
+  const hasSearchText = search.trim().length > 0;
+  const isSearchingAllPeriods = searchScope === 'all' || hasSearchText;
+
+  const allPeriodTransactions = useMemo(
+    () => collectAllPeriodTransactions(periods),
+    [periods],
+  );
+
+  const sourceTransactions = isSearchingAllPeriods
+    ? allPeriodTransactions
+    : transactions;
+
   const filteredTransactions = useMemo(
     () =>
-      filterTransactions(transactions, {
+      filterTransactions(sourceTransactions, {
         search,
         tipo: filterTipo,
         categoria: filterCategoria,
         formaPagamento: filterForma,
         titular: filterTitular,
       }),
-    [transactions, search, filterTipo, filterCategoria, filterForma, filterTitular],
+    [
+      sourceTransactions,
+      search,
+      filterTipo,
+      filterCategoria,
+      filterForma,
+      filterTitular,
+    ],
   );
 
   const totals = useMemo(() => {
@@ -205,10 +236,14 @@ export const ControleTab: React.FC<ControleTabProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="font-display text-xl sm:text-2xl font-bold text-[var(--text-primary)]">
-            Controle — {formatPeriodLabel(ano, mes)}
+            {isSearchingAllPeriods
+              ? 'Controle — Todos os Períodos'
+              : `Controle — ${formatPeriodLabel(ano, mes)}`}
           </h1>
           <p className="text-sm text-[var(--text-muted)] mt-0.5">
-            Planilha de lançamentos diários · Pressione Enter para salvar rapidamente na linha
+            {isSearchingAllPeriods
+              ? 'Buscando em todos os períodos salvos · Resultados combinados de todos os meses e anos'
+              : 'Planilha de lançamentos diários · Pressione Enter para salvar rapidamente na linha'}
           </p>
         </div>
 
@@ -233,99 +268,166 @@ export const ControleTab: React.FC<ControleTabProps> = ({
         </div>
       </div>
 
-      {/* Filter Toolbar (Full width comfortable controls on mobile) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 rounded-xl border-[1.5px] border-[var(--card-blue-border)] bg-[var(--bg-surface)] [box-shadow:var(--card-shadow)] p-4">
-        <div className="sm:col-span-2 relative">
-          <label htmlFor="controle-search" className="sr-only">
-            Buscar por descrição ou observação
-          </label>
-          <Search
-            className="w-4 h-4 text-[var(--accent-blue)] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
-            aria-hidden="true"
-          />
-          <input
-            id="controle-search"
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar descrição, loja ou obs..."
-            className="w-full bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-lg pl-9 pr-3 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)] focus:outline-none focus:border-[var(--accent-underline)]"
-          />
+      {/* Filter Toolbar (Search + Scope Toggle + Combined Filters) */}
+      <div className="space-y-3 rounded-xl border-[1.5px] border-[var(--card-blue-border)] bg-[var(--bg-surface)] [box-shadow:var(--card-shadow)] p-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          <div className="relative flex-1 min-w-0">
+            <label htmlFor="controle-search" className="sr-only">
+              Buscar por descrição, observação, categoria, cartão ou período
+            </label>
+            <Search
+              className="w-4 h-4 text-[var(--accent-blue)] absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"
+              aria-hidden="true"
+            />
+            <input
+              id="controle-search"
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar descrição, loja, cartão ou obs em todos os períodos..."
+              className="w-full bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-lg pl-9 pr-9 py-2 text-sm text-[var(--text-primary)] placeholder:text-[var(--text-placeholder)] focus:outline-none focus:border-[var(--accent-underline)]"
+            />
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                aria-label="Limpar busca"
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-surface-hover)] cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" aria-hidden="true" />
+              </button>
+            )}
+          </div>
+
+          <button
+            type="button"
+            data-testid="controle-scope-toggle"
+            aria-pressed={isSearchingAllPeriods}
+            onClick={() => {
+              if (searchScope === 'all') {
+                setSearchScope('active');
+              } else {
+                setSearchScope('all');
+              }
+            }}
+            className={`inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg border-[1.5px] text-xs sm:text-sm font-semibold whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
+              isSearchingAllPeriods
+                ? 'border-[var(--accent-blue-border)] bg-[var(--accent-blue-bg)] text-[var(--accent-blue)]'
+                : 'border-[var(--border-strong)] bg-[var(--bg-input)] hover:bg-[var(--bg-surface-hover)] text-[var(--text-secondary)]'
+            }`}
+          >
+            {isSearchingAllPeriods ? (
+              <Globe className="w-4 h-4 shrink-0" aria-hidden="true" />
+            ) : (
+              <Calendar className="w-4 h-4 shrink-0" aria-hidden="true" />
+            )}
+            <span>
+              {isSearchingAllPeriods
+                ? 'Escopo: Todos os Períodos'
+                : 'Escopo: Mês Atual'}
+            </span>
+          </button>
         </div>
 
-        <div>
-          <label htmlFor="filter-tipo" className="sr-only">
-            Filtrar por tipo
-          </label>
-          <select
-            id="filter-tipo"
-            value={filterTipo}
-            onChange={(e) => setFilterTipo(e.target.value as 'TODOS' | TransactionType)}
-            className="w-full bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-underline)]"
-          >
-            <option value="TODOS">Tipo: Todos</option>
-            <option value="RECEITA">Tipo: RECEITA</option>
-            <option value="DESPESA">Tipo: DESPESA</option>
-          </select>
-        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div>
+            <label htmlFor="filter-tipo" className="sr-only">
+              Filtrar por tipo
+            </label>
+            <select
+              id="filter-tipo"
+              value={filterTipo}
+              onChange={(e) => setFilterTipo(e.target.value as 'TODOS' | TransactionType)}
+              className="w-full bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-underline)]"
+            >
+              <option value="TODOS">Tipo: Todos</option>
+              <option value="RECEITA">Tipo: RECEITA</option>
+              <option value="DESPESA">Tipo: DESPESA</option>
+            </select>
+          </div>
 
-        <div>
-          <label htmlFor="filter-categoria" className="sr-only">
-            Filtrar por categoria
-          </label>
-          <select
-            id="filter-categoria"
-            value={filterCategoria}
-            onChange={(e) => setFilterCategoria(e.target.value)}
-            className="w-full bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-underline)]"
-          >
-            <option value="TODAS">Categoria: Todas</option>
-            {uniqueCategoryNames.map((cat) => (
-              <option key={cat} value={cat}>
-                {cat}
-              </option>
-            ))}
-          </select>
-        </div>
+          <div>
+            <label htmlFor="filter-categoria" className="sr-only">
+              Filtrar por categoria
+            </label>
+            <select
+              id="filter-categoria"
+              value={filterCategoria}
+              onChange={(e) => setFilterCategoria(e.target.value)}
+              className="w-full bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-underline)]"
+            >
+              <option value="TODAS">Categoria: Todas</option>
+              {uniqueCategoryNames.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <div>
-          <label htmlFor="filter-forma" className="sr-only">
-            Filtrar por forma de pagamento
-          </label>
-          <select
-            id="filter-forma"
-            value={filterForma}
-            onChange={(e) => setFilterForma(e.target.value)}
-            className="w-full bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-underline)]"
-          >
-            <option value="TODAS">Pago / Forma: Todas</option>
-            {formasPagamento.map((fp) => (
-              <option key={fp} value={fp}>
-                {fp}
-              </option>
-            ))}
-          </select>
-        </div>
+          <div>
+            <label htmlFor="filter-forma" className="sr-only">
+              Filtrar por forma de pagamento
+            </label>
+            <select
+              id="filter-forma"
+              value={filterForma}
+              onChange={(e) => setFilterForma(e.target.value)}
+              className="w-full bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-underline)]"
+            >
+              <option value="TODAS">Pago / Forma: Todas</option>
+              {formasPagamento.map((fp) => (
+                <option key={fp} value={fp}>
+                  {fp}
+                </option>
+              ))}
+            </select>
+          </div>
 
-        <div>
-          <label htmlFor="filter-titular" className="sr-only">
-            Filtrar por titular
-          </label>
-          <select
-            id="filter-titular"
-            value={filterTitular}
-            onChange={(e) => setFilterTitular(e.target.value)}
-            className="w-full bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-underline)]"
-          >
-            <option value="Todos">Titular: Todos</option>
-            {titulares.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
+          <div>
+            <label htmlFor="filter-titular" className="sr-only">
+              Filtrar por titular
+            </label>
+            <select
+              id="filter-titular"
+              value={filterTitular}
+              onChange={(e) => setFilterTitular(e.target.value)}
+              className="w-full bg-[var(--bg-input)] border-[1.5px] border-[var(--border-strong)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-underline)]"
+            >
+              <option value="Todos">Titular: Todos</option>
+              {titulares.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
+
+      {isSearchingAllPeriods && (
+        <div
+          data-testid="controle-all-periods-banner"
+          className="rounded-xl border-[1.5px] border-[var(--accent-blue-border)] bg-[var(--accent-blue-bg)] px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 text-xs sm:text-sm"
+        >
+          <div className="flex items-center gap-2 text-[var(--text-primary)]">
+            <Globe className="w-4 h-4 text-[var(--accent-blue)] shrink-0" aria-hidden="true" />
+            <span>
+              <strong>Buscando em todos os períodos</strong> · {filteredTransactions.length} lançamento(s) encontrado(s)
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setSearch('');
+              setSearchScope('active');
+            }}
+            className="text-xs font-semibold text-[var(--accent-blue)] hover:underline cursor-pointer"
+          >
+            Voltar ao Mês Atual ({formatPeriodLabel(ano, mes)})
+          </button>
+        </div>
+      )}
 
       {quickError && (
         <div
@@ -657,8 +759,16 @@ export const ControleTab: React.FC<ControleTabProps> = ({
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2 text-xs text-[var(--text-muted)] font-mono-nums">
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-[var(--text-muted)] font-mono-nums">
                       <span>{tx.data}</span>
+                      {isSearchingAllPeriods && (
+                        <span
+                          data-testid="tx-period-badge"
+                          className="px-1.5 py-0.5 rounded border border-[var(--accent-blue-border)] bg-[var(--accent-blue-bg)] text-[var(--accent-blue)] text-[10px] font-semibold"
+                        >
+                          {MONTH_ABBR[tx.mes - 1] || String(tx.mes).padStart(2, '0')}/{tx.ano}
+                        </span>
+                      )}
                       <span aria-hidden="true">·</span>
                       <span
                         className={`font-semibold ${
@@ -766,7 +876,7 @@ export const ControleTab: React.FC<ControleTabProps> = ({
           <table className="honey-table w-full text-left border-collapse min-w-[1060px]">
             <thead>
               <tr className="text-xs font-semibold text-[var(--text-secondary)]">
-                <th className="py-3 px-3 w-32 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)]">Data</th>
+                <th className="py-3 px-3 w-40 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)]">Data</th>
                 <th className="py-3 px-3 w-28 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)]">Tipo</th>
                 <th className="py-3 px-3 w-40 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)]">Categoria</th>
                 <th className="py-3 px-3 w-44 sticky top-0 z-20 bg-[var(--bg-header)] border-b border-[var(--border-subtle)]">Descrição</th>
@@ -1089,7 +1199,17 @@ export const ControleTab: React.FC<ControleTabProps> = ({
                       className="hover:bg-[var(--bg-surface-hover)] transition-colors h-11"
                     >
                       <td className="py-2.5 px-3 font-mono-nums text-xs sm:text-sm text-[var(--text-secondary)]">
-                        {tx.data}
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span>{tx.data}</span>
+                          {isSearchingAllPeriods && (
+                            <span
+                              data-testid="tx-period-badge"
+                              className="px-1.5 py-0.5 rounded border border-[var(--accent-blue-border)] bg-[var(--accent-blue-bg)] text-[var(--accent-blue)] text-[10px] font-semibold"
+                            >
+                              {MONTH_ABBR[tx.mes - 1] || String(tx.mes).padStart(2, '0')}/{tx.ano}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="py-2.5 px-3">
                         <span
